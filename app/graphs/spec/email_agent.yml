@@ -1,0 +1,57 @@
+# Zimbra Email Automation Orchestrator — complex multi-branch LangGraph.
+# Load in LangGraph Builder: Templates → "Zimbra Email Orchestrator"
+
+name: EmailAutomationOrchestrator
+entrypoint: ingest_mailbox
+nodes:
+  - name: ingest_mailbox
+  - name: enrich_messages
+  - name: classify_intent
+  - name: urgent_escalation
+  - name: compliance_review
+  - name: sales_pipeline
+  - name: support_agent
+  - name: zimbra_tools
+  - name: draft_support_reply
+  - name: newsletter_batch
+  - name: general_briefing
+  - name: merge_insights
+  - name: quality_review
+  - name: refine_output
+  - name: format_executive_report
+edges:
+  - from: __start__
+    to: ingest_mailbox
+  - from: ingest_mailbox
+    to: enrich_messages
+  - from: enrich_messages
+    to: classify_intent
+  - from: classify_intent
+    condition: route_intent
+    paths: [urgent_escalation, compliance_review, sales_pipeline, support_agent, newsletter_batch, general_briefing]
+  - from: urgent_escalation
+    to: merge_insights
+  - from: compliance_review
+    to: merge_insights
+  - from: sales_pipeline
+    to: merge_insights
+  - from: newsletter_batch
+    to: merge_insights
+  - from: general_briefing
+    to: merge_insights
+  - from: support_agent
+    condition: route_support_agent
+    paths: [zimbra_tools, draft_support_reply]
+  - from: zimbra_tools
+    to: support_agent
+  - from: draft_support_reply
+    to: merge_insights
+  - from: merge_insights
+    to: quality_review
+  - from: quality_review
+    condition: route_quality
+    paths: [refine_output, format_executive_report]
+  - from: refine_output
+    to: format_executive_report
+  - from: format_executive_report
+    to: __end__
