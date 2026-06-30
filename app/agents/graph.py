@@ -6,6 +6,7 @@ from app.agents.email_agent import EmailAutomationOrchestrator
 from app.agents.nodes import NodeContext, make_nodes
 from app.agents.state import AgentState
 from app.config import Settings
+from app.db.email_repository import EmailRepository
 from app.services.email_sync import EmailSyncService
 
 
@@ -13,8 +14,13 @@ def build_graph(
     email_service: EmailSyncService,
     settings: Settings,
     checkpointer: Any | None = None,
+    email_repository: EmailRepository | None = None,
 ) -> Any:
-    ctx = NodeContext(email_service=email_service, settings=settings)
+    ctx = NodeContext(
+        email_service=email_service,
+        settings=settings,
+        email_repository=email_repository,
+    )
     nodes = make_nodes(ctx)
     builder = EmailAutomationOrchestrator(
         state_schema=AgentState,

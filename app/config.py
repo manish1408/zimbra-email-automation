@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     zimbra_admin_password: str
 
     zimbra_domain_filter: str | None = None
-    zimbra_search_query: str = "in:anywhere"
+    zimbra_search_query: str = "is:anywhere"
     zimbra_search_batch_size: int = 100
 
     app_host: str = "0.0.0.0"
@@ -28,6 +28,21 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     agent_inbox_limit: int = 10
     agent_checkpoint_path: str = "data/agent_checkpoints.db"
+
+    # Scheduled sync + AI analysis
+    sync_target_email: str | None = None
+    sync_interval_hours: float = 6.0
+    database_url: str = "postgresql://zimbra:zimbra_dev@localhost:5432/zimbra_automation"
+    sync_fetch_bodies: bool = True
+    sync_poll_interval_seconds: int = 60
+    sync_inbox_query: str = "in:inbox"
+    sync_overlap_minutes: int = 5
+
+    # Automation actions
+    automation_dry_run: bool = True
+    auto_send_ack: bool = True
+    routing_rules_path: str = "config/routing_rules.yaml"
+    employees_path: str = "config/employees.yaml"
 
     @property
     def scheme(self) -> str:

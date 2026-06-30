@@ -138,3 +138,51 @@ class AgentRunResult(BaseModel):
     draft_reply: str | None = None
     archive_suggestion: str | None = None
     report: dict = Field(default_factory=dict)
+
+
+class MessageMetadata(BaseModel):
+    zimbra_id: str
+    account: str
+    category: str | None = None
+    is_spam: bool = False
+    folder_path: str | None = None
+    forwarded_to: str | None = None
+    ack_sent_at: str | None = None
+    draft_saved: bool = False
+    classification: dict | None = None
+    error: str | None = None
+    processed_at: str | None = None
+    analyzed_at: str | None = None
+
+
+class LocalMailboxStats(BaseModel):
+    account: str
+    total: int
+    unanalyzed: int
+    last_seen_date: str | None = None
+    last_poll_at: str | None = None
+    last_poll_new_count: int = 0
+
+
+class LocalMessageListResponse(BaseModel):
+    account: str
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+    messages: list[MessageSummary]
+
+
+class AnalysisRunSummary(BaseModel):
+    id: int
+    account: str
+    thread_id: str
+    dominant_intent: str | None = None
+    message_count: int | None = None
+    report: dict = Field(default_factory=dict)
+    created_at: str | None = None
+
+
+class AnalysisRunListResponse(BaseModel):
+    account: str
+    runs: list[AnalysisRunSummary]

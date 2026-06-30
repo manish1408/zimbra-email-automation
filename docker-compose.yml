@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: zimbra-automation-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zimbra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zimbra_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-zimbra_automation}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./app/db/migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
+
+volumes:
+  pgdata:

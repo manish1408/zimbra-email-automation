@@ -30,17 +30,32 @@ Admin credentials
 
 ## Quick start
 
+### Backend (FastAPI)
+
 ```bash
 cd ~/dev/zimbra-email-automation
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env with your Zimbra host and admin credentials
+# Edit .env with your Zimbra host, admin credentials, and DATABASE_URL
+docker compose up -d postgres
 uvicorn app.main:app --reload
 ```
 
 Open [http://localhost:8000/docs](http://localhost:8000/docs) for Swagger UI.
+
+### Frontend (Angular inbox UI)
+
+```bash
+cd frontend
+npm install
+npm start
+```
+
+Open [http://localhost:4200](http://localhost:4200). The dev server proxies `/api` to FastAPI on port 8000.
+
+**Inbox workflow:** choose a mailbox from the dropdown → browse all that user's emails → click a message to view full details, automation metadata, and related messages by subject.
 
 ## API endpoints (Swagger)
 
@@ -58,6 +73,12 @@ All routes are under `/api/v1` and documented at `/docs`.
 | `GET` | `/api/v1/users/{email}/folders` | List mailbox folders |
 | `POST` | `/api/v1/sync` | Bulk sync all users |
 | `POST` | `/api/v1/sync/users/{email}` | Sync one user |
+| `GET` | `/api/v1/local/users/{email}/messages` | Cached messages from PostgreSQL |
+| `GET` | `/api/v1/local/users/{email}/messages/{id}` | Cached message detail |
+| `GET` | `/api/v1/local/users/{email}/messages/{id}/metadata` | Automation metadata |
+| `GET` | `/api/v1/local/users/{email}/stats` | Local sync statistics |
+| `GET` | `/api/v1/local/users/{email}/analysis-runs` | Agent run history |
+| `POST` | `/api/v1/agent/run` | Run AI agent on inbox |
 
 Encode `@` as `%40` in email paths (e.g. `mayank.gautam%40mail.gkhair.com`).
 
@@ -87,6 +108,7 @@ Copy `.env.example` to `.env` and set:
 | `ZIMBRA_VERIFY_SSL` | Set `true` in production |
 | `ZIMBRA_DOMAIN_FILTER` | Optional domain name to limit account listing |
 | `ZIMBRA_SEARCH_QUERY` | Default search, e.g. `in:anywhere` or `in:inbox` |
+| `DATABASE_URL` | PostgreSQL connection string (default: `postgresql://zimbra:zimbra_dev@localhost:5432/zimbra_automation`) |
 
 ## API endpoints
 
@@ -130,14 +152,15 @@ python scripts/export_emails.py --max-accounts 1 --output data/export.json
 app/
   main.py                 # FastAPI entrypoint
   config.py               # Environment settings
-  api/routes/emails.py    # HTTP routes
+  api/routes/             # HTTP routes (users, mailboxes, sync, agent, local)
+  db/email_repository.py  # PostgreSQL persistence
   models/schemas.py       # Pydantic response models
   services/
     email_sync.py         # Orchestration layer
-    zimbra/
-      soap.py             # SOAP envelope helpers
-      admin_client.py     # Admin auth + accounts + delegate
-      mail_client.py        # Search + GetMsg
+    scheduled_pipeline.py # Poll + sync + AI pipeline
+    zimbra/               # SOAP clients
+frontend/                 # Angular inbox UI (Bootstrap)
+docker-compose.yml        # Local PostgreSQL
 scripts/
   export_emails.py        # Standalone JSON export
 ```

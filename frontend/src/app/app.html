@@ -1,0 +1,22 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-semibold" routerLink="/inbox">Zimbra Mail Explorer</a>
+    <div class="navbar-nav ms-3">
+      <a class="nav-link" routerLink="/inbox" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: false }">Inbox</a>
+      <a class="nav-link" routerLink="/agent" routerLinkActive="active">Agent</a>
+      <a class="nav-link" routerLink="/settings" routerLinkActive="active">Settings</a>
+    </div>
+    <div class="ms-auto d-flex align-items-center gap-2">
+      @if (health) {
+        <span
+          class="badge rounded-pill"
+          [class.text-bg-success]="health.zimbra_connected"
+          [class.text-bg-warning]="!health.zimbra_connected"
+        >
+          {{ health.zimbra_connected ? 'Zimbra connected' : 'Zimbra offline' }}
+        </span>
+      }
+    </div>
+  </div>
+</nav>
+<router-outlet />

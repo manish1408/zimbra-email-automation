@@ -1,0 +1,18 @@
+I want to develop following features in this email automation
+
+1. Spam filtering 
+2. Categorise the emails as marketing, customer support, enquiry etc. Make them as folders in the email software zimbra
+3. Email Routing
+ Emails with logistics information should go to sc@gkhair.com 
+    Emails related to invoices or billing should go to billing@gkhair.com 
+    Only if they are not spam, tons of spam emails with these types of things as well, like fake invoices for payment and sales emails for logisitics. 
+
+    Candidates applying for a job or career related should go to hr@gkhair.com 
+
+    Emails that are specifically asking for a person in the company can be routed to that person, like I am trying to reach Meghan, for example. 
+
+    Customers that are looking for support with distribution orders or general inquiries can be routed to orders@gkhair.com 
+
+    Others emails that customer support needs to answer with a live agent should notify those in the info@gkhair.com support inbox.
+4. Generating responses based on the conversations and saving it to drafts
+5. Acknowledgement - The email automation that we have to  developed, will respond to the customer that we have received your email and we are working on it.

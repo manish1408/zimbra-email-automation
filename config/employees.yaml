@@ -1,0 +1,7 @@
+# Name aliases (lowercase) mapped to email addresses for person routing.
+employees:
+  meghan:
+    email: meghan@gkhair.com
+    aliases: [meghan smith, meghan.smith]
+  meghan smith:
+    email: meghan@gkhair.com

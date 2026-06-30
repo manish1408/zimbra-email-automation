@@ -13,6 +13,16 @@ def local_name(tag: str) -> str:
     return tag.split("}")[-1] if "}" in tag else tag
 
 
+def escape_xml(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+
+
 def build_envelope(
     body_xml: str,
     auth_token: str | None = None,

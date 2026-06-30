@@ -1,0 +1,91 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "FastAPI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "jinja": true,
+      "justMyCode": true
+    },
+    {
+      "name": "FastAPI (reload)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "app.main:app",
+        "--reload",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "subProcess": true,
+      "jinja": true,
+      "justMyCode": true
+    },
+    {
+      "name": "Scheduled Job",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/scheduled_job.py",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Scheduled Job (sync only)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/scheduled_job.py",
+      "args": ["--sync-only"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Export Emails",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/export_emails.py",
+      "args": [
+        "--account",
+        "${input:exportAccount}",
+        "--output",
+        "data/export.json"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ],
+  "inputs": [
+    {
+      "id": "exportAccount",
+      "type": "promptString",
+      "description": "Mailbox to export (e.g. user@example.com)",
+      "default": "user@example.com"
+    }
+  ]
+}

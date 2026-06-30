@@ -5,25 +5,60 @@ from typing import Annotated, Any, Literal
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
+# Legacy demo graph intents
 IntentCategory = Literal["urgent", "compliance", "sales", "support", "newsletter", "general"]
+
+EmailCategory = Literal[
+    "spam",
+    "marketing",
+    "logistics",
+    "billing",
+    "careers",
+    "orders",
+    "person_request",
+    "customer_support",
+    "enquiry",
+    "general",
+]
 
 
 class MessageClassification(TypedDict):
     message_id: str
     subject: str | None
-    intent: IntentCategory
-    priority: int
+    category: EmailCategory
+    is_spam: bool
+    confidence: float
+    requested_person: str | None
+    needs_live_agent: bool
     reasoning: str
-    compliance_risk: bool
+    route_target: str | None
+
+
+class MessageActionRecord(TypedDict, total=False):
+    message_id: str
+    category: str
+    is_spam: bool
+    folder_path: str | None
+    forwarded_to: str | None
+    ack_sent: bool
+    draft_saved: bool
+    error: str | None
 
 
 class AgentState(TypedDict, total=False):
     user_email: str
     limit: int
     instruction: str | None
+    use_local_db: bool
     messages: list[dict[str, Any]]
     enriched_messages: list[dict[str, Any]]
     classifications: list[MessageClassification]
+    actions_taken: list[MessageActionRecord]
+    action_errors: list[str]
+    report: dict[str, Any]
+    current_node: str
+
+    # Legacy demo graph fields
     dominant_intent: IntentCategory
     agent_messages: Annotated[list, add_messages]
     pending_tool_calls: list[dict[str, Any]]
@@ -36,5 +71,3 @@ class AgentState(TypedDict, total=False):
     merged_insights: str
     needs_refinement: bool
     executive_report: str
-    report: dict[str, Any]
-    current_node: str

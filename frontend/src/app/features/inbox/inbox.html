@@ -1,0 +1,251 @@
+<div class="inbox-page">
+  <!-- User picker (always visible) -->
+  <div class="inbox-toolbar border-bottom bg-white px-3 py-2 d-flex flex-wrap align-items-center gap-3">
+    <div class="d-flex align-items-center gap-2 flex-grow-1">
+      <label class="form-label mb-0 text-muted small">Mailbox</label>
+      <select
+        class="form-select form-select-sm user-select"
+        [ngModel]="selectedEmail"
+        (ngModelChange)="onUserSelect($event)"
+      >
+        <option value="">Choose a mailbox…</option>
+        @for (user of filteredUsers; track user.email) {
+          <option [value]="user.email">
+            {{ user.display_name ? user.display_name + ' — ' : '' }}{{ user.email }}
+          </option>
+        }
+      </select>
+      <input
+        type="search"
+        class="form-control form-control-sm user-filter"
+        placeholder="Filter users…"
+        [(ngModel)]="userFilter"
+      />
+    </div>
+
+    @if (selectedEmail) {
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge text-bg-secondary">{{ total }} messages</span>
+        <div class="btn-group btn-group-sm" role="group">
+          <button
+            type="button"
+            class="btn"
+            [class.btn-primary]="source === 'live'"
+            [class.btn-outline-primary]="source !== 'live'"
+            (click)="onSourceChange('live')"
+          >
+            Live
+          </button>
+          <button
+            type="button"
+            class="btn"
+            [class.btn-primary]="source === 'cached'"
+            [class.btn-outline-primary]="source !== 'cached'"
+            (click)="onSourceChange('cached')"
+          >
+            Cached
+          </button>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary" [disabled]="syncing" (click)="syncUser()">
+          {{ syncing ? 'Syncing…' : 'Sync' }}
+        </button>
+      </div>
+    }
+  </div>
+
+  @if (error) {
+    <div class="alert alert-danger m-3 mb-0">{{ error }}</div>
+  }
+
+  @if (!selectedEmail) {
+    <div class="empty-state d-flex flex-column align-items-center justify-content-center">
+      <div class="empty-icon mb-3">✉</div>
+      <h2 class="h4">Choose a mailbox</h2>
+      <p class="text-muted text-center max-w-md">
+        Select a user from the dropdown above to browse all their emails, folders, and message details.
+      </p>
+      @if (loadingUsers) {
+        <div class="spinner-border text-primary" role="status"></div>
+      }
+    </div>
+  } @else {
+    <div class="inbox-layout">
+      <!-- Folder sidebar -->
+      <aside class="folder-pane border-end bg-light">
+        <div class="pane-header">Folders</div>
+        <nav class="folder-nav">
+          @for (filter of folderFilters; track filter.query) {
+            <button
+              type="button"
+              class="folder-item"
+              [class.active]="activeQuery === filter.query"
+              (click)="selectFolder(filter)"
+            >
+              {{ filter.label }}
+            </button>
+          }
+          @if (folders.length) {
+            <div class="folder-divider"></div>
+            @for (folder of folders; track folder.id) {
+              <button
+                type="button"
+                class="folder-item"
+                [class.active]="activeFolderLabel === folder.name"
+                (click)="selectZimbraFolder(folder)"
+              >
+                {{ folder.name }}
+                @if (folder.unread_count) {
+                  <span class="badge rounded-pill text-bg-primary ms-auto">{{ folder.unread_count }}</span>
+                }
+              </button>
+            }
+          }
+        </nav>
+      </aside>
+
+      <!-- Message list -->
+      <section class="list-pane border-end">
+        <div class="pane-header d-flex align-items-center gap-2">
+          <span class="fw-semibold">{{ activeFolderLabel }}</span>
+          <form class="ms-auto d-flex gap-1" (submit)="$event.preventDefault(); onSearch()">
+            <input
+              type="search"
+              class="form-control form-control-sm"
+              placeholder="Zimbra query…"
+              [(ngModel)]="searchQuery"
+              name="searchQuery"
+            />
+            <button type="submit" class="btn btn-sm btn-outline-primary">Search</button>
+          </form>
+        </div>
+
+        @if (loadingMessages) {
+          <div class="p-4 text-center">
+            <div class="spinner-border spinner-border-sm text-primary"></div>
+          </div>
+        } @else if (!messages.length) {
+          <div class="p-4 text-muted text-center">No messages found.</div>
+        } @else {
+          <div class="message-list">
+            @for (msg of messages; track msg.id) {
+              <button
+                type="button"
+                class="message-row"
+                [class.unread]="msg.is_read === false"
+                [class.selected]="selectedMessage?.id === msg.id"
+                (click)="selectMessage(msg)"
+              >
+                <div class="message-row-top">
+                  @if (msg.is_read === false) {
+                    <span class="unread-dot"></span>
+                  }
+                  <span class="from text-truncate">{{ msg.from || '(unknown)' }}</span>
+                  <span class="date small text-muted">{{ formatDate(msg.date) }}</span>
+                </div>
+                <div class="subject text-truncate">{{ msg.subject || '(no subject)' }}</div>
+                <div class="snippet text-truncate text-muted small">{{ msg.fragment }}</div>
+              </button>
+            }
+          </div>
+        }
+
+        <div class="list-footer border-top d-flex justify-content-between align-items-center px-3 py-2">
+          <button class="btn btn-sm btn-outline-secondary" [disabled]="offset === 0" (click)="prevPage()">
+            Previous
+          </button>
+          <span class="small text-muted">{{ offset + 1 }}–{{ offset + messages.length }} of {{ total }}</span>
+          <button class="btn btn-sm btn-outline-secondary" [disabled]="!hasMore" (click)="nextPage()">
+            Next
+          </button>
+        </div>
+      </section>
+
+      <!-- Message detail -->
+      <section class="detail-pane">
+        @if (loadingDetail) {
+          <div class="p-4 text-center">
+            <div class="spinner-border spinner-border-sm text-primary"></div>
+          </div>
+        } @else if (!selectedMessage) {
+          <div class="p-4 text-muted text-center">Select a message to view details.</div>
+        } @else {
+          <div class="detail-header border-bottom">
+            <h1 class="h5 mb-2">{{ selectedMessage.subject || '(no subject)' }}</h1>
+            <div class="meta-grid small">
+              <div><span class="text-muted">From</span> {{ selectedMessage.from || '—' }}</div>
+              <div><span class="text-muted">To</span> {{ (selectedMessage.to || []).join(', ') || '—' }}</div>
+              <div><span class="text-muted">Date</span> {{ formatDate(selectedMessage.date) }}</div>
+              <div><span class="text-muted">Folder ID</span> {{ selectedMessage.folder || '—' }}</div>
+              <div><span class="text-muted">Size</span> {{ formatSize(selectedMessage.size) }}</div>
+              <div>
+                <span class="text-muted">Read</span>
+                {{ selectedMessage.is_read === false ? 'Unread' : 'Read' }}
+              </div>
+              <div><span class="text-muted">Message ID</span> <code>{{ selectedMessage.id }}</code></div>
+              <div><span class="text-muted">Account</span> {{ selectedMessage.account }}</div>
+            </div>
+          </div>
+
+          @if (selectedMetadata) {
+            <div class="automation-panel border-bottom">
+              <div class="pane-header small">Automation</div>
+              <div class="px-3 pb-3 d-flex flex-wrap gap-2 align-items-center">
+                @if (selectedMetadata.category) {
+                  <span class="badge" [ngClass]="categoryClass(selectedMetadata.category)">
+                    {{ selectedMetadata.category }}
+                  </span>
+                }
+                @if (selectedMetadata.is_spam) {
+                  <span class="badge bg-danger">Spam</span>
+                }
+                @if (selectedMetadata.forwarded_to) {
+                  <span class="badge bg-info text-dark">Routed → {{ selectedMetadata.forwarded_to }}</span>
+                }
+                @if (selectedMetadata.ack_sent_at) {
+                  <span class="badge bg-success">Ack sent</span>
+                }
+                @if (selectedMetadata.draft_saved) {
+                  <span class="badge bg-secondary">Draft saved</span>
+                }
+                @if (selectedMetadata.analyzed_at) {
+                  <span class="text-muted small">Analyzed {{ formatDate(selectedMetadata.analyzed_at) }}</span>
+                }
+              </div>
+              @if (selectedMetadata.classification?.['reasoning']) {
+                <div class="px-3 pb-3 small text-muted">
+                  {{ selectedMetadata.classification?.['reasoning'] }}
+                </div>
+              }
+            </div>
+          }
+
+          @if (relatedMessages.length) {
+            <div class="related-panel border-bottom">
+              <div class="pane-header small">Related messages (same subject)</div>
+              <div class="px-3 pb-2">
+                @for (rel of relatedMessages; track rel.id) {
+                  <button type="button" class="btn btn-sm btn-link p-0 d-block" (click)="selectMessage(rel)">
+                    {{ rel.from }} — {{ formatDate(rel.date) }}
+                  </button>
+                }
+              </div>
+            </div>
+          }
+
+          <div class="message-body px-3 py-3">
+            @if (isHtmlBody(selectedMessage.body)) {
+              <iframe
+                class="body-html-frame"
+                [srcdoc]="getBodySrcdoc(selectedMessage.body)"
+                sandbox=""
+                title="Email body"
+              ></iframe>
+            } @else {
+              <pre class="body-content">{{ plainBody(selectedMessage.body, selectedMessage.fragment) }}</pre>
+            }
+          </div>
+        }
+      </section>
+    </div>
+  }
+</div>

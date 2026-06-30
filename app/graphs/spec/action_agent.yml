@@ -1,0 +1,25 @@
+# GK Hair Email Automation — per-message action pipeline
+name: EmailActionPipeline
+entrypoint: ingest_mailbox
+nodes:
+  - name: ingest_mailbox
+  - name: enrich_messages
+  - name: classify_emails
+  - name: resolve_routes
+  - name: apply_actions
+  - name: format_run_report
+edges:
+  - from: __start__
+    to: ingest_mailbox
+  - from: ingest_mailbox
+    to: enrich_messages
+  - from: enrich_messages
+    to: classify_emails
+  - from: classify_emails
+    to: resolve_routes
+  - from: resolve_routes
+    to: apply_actions
+  - from: apply_actions
+    to: format_run_report
+  - from: format_run_report
+    to: __end__

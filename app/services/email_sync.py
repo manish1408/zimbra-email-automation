@@ -103,6 +103,66 @@ class EmailSyncService:
         detail.body = message.body
         return detail
 
+    async def _delegate_token(self, user_email: str) -> str:
+        return await self.admin.delegate_auth(user_email)
+
+    async def move_message(
+        self, user_email: str, message_id: str, folder_id: str
+    ) -> None:
+        token = await self._delegate_token(user_email)
+        await self.mail.move_message(token, user_email, message_id, folder_id)
+
+    async def get_or_create_folder(self, user_email: str, name: str) -> str:
+        token = await self._delegate_token(user_email)
+        return await self.mail.get_or_create_folder(token, user_email, name)
+
+    async def forward_message(
+        self, user_email: str, message_id: str, to_address: str
+    ) -> None:
+        token = await self._delegate_token(user_email)
+        await self.mail.forward_message(
+            token, user_email, message_id, to_address, from_address=user_email
+        )
+
+    async def send_reply(
+        self, user_email: str, message_id: str, body_text: str
+    ) -> None:
+        token = await self._delegate_token(user_email)
+        await self.mail.send_reply(
+            token, user_email, message_id, body_text, from_address=user_email
+        )
+
+    async def save_draft(
+        self,
+        user_email: str,
+        subject: str,
+        body_text: str,
+        to_address: str | None = None,
+    ) -> str | None:
+        token = await self._delegate_token(user_email)
+        return await self.mail.save_draft(
+            token, user_email, subject, body_text, to_address=to_address
+        )
+
+    async def autocomplete_person(self, user_email: str, name: str) -> list[str]:
+        token = await self._delegate_token(user_email)
+        return await self.mail.autocomplete_gal(token, user_email, name)
+
+    async def poll_inbox(
+        self,
+        user_email: str,
+        query: str,
+        limit: int = 50,
+    ) -> list[MessageSummary]:
+        response = await self._search_mailbox(
+            user_email=user_email,
+            query=query,
+            limit=limit,
+            offset=0,
+            response_class=MessageSearchResponse,
+        )
+        return response.messages
+
     async def sync_all_mailboxes(
         self,
         query: str | None = None,

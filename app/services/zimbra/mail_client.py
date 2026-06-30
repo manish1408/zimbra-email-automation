@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as html_module
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -9,10 +10,26 @@ from app.config import Settings
 from app.services.zimbra.soap import (
     ZIMBRA_MAIL_NS,
     build_envelope,
+    escape_xml,
     find_all,
+    find_by_local_name,
     find_text,
+    local_name,
     parse_response,
 )
+
+# Zimbra default folder IDs (resolved dynamically when possible)
+INBOX_FOLDER_ID = "2"
+
+# Some Zimbra/Carbonio builds reject in:anywhere with HTTP 500; is:anywhere works.
+QUERY_ALIASES = {
+    "in:anywhere": "is:anywhere",
+}
+
+
+def normalize_search_query(query: str) -> str:
+    q = query.strip()
+    return QUERY_ALIASES.get(q.lower(), q)
 
 
 @dataclass
@@ -75,11 +92,11 @@ class ZimbraMailClient:
         limit: int = 100,
         offset: int = 0,
     ) -> tuple[list[ZimbraMessage], bool, int]:
-        query = query or self.settings.zimbra_search_query
+        query = normalize_search_query(query or self.settings.zimbra_search_query)
         body = (
             f'<SearchRequest xmlns="{ZIMBRA_MAIL_NS}"'
             f' types="message" fetch="1" limit="{limit}" offset="{offset}">'
-            f"<query>{query}</query>"
+            f"<query>{escape_xml(query)}</query>"
             "</SearchRequest>"
         )
         xml = await self._post(body, auth_token=auth_token, target_account=account_name)
@@ -105,12 +122,12 @@ class ZimbraMailClient:
     ) -> ZimbraMessage:
         body = (
             f'<GetMsgRequest xmlns="{ZIMBRA_MAIL_NS}">'
-            f'<m id="{message_id}" wantContent="full"/>'
+            f'<m id="{escape_xml(message_id)}" html="1" needExp="1" wantContent="full"/>'
             "</GetMsgRequest>"
         )
         xml = await self._post(body, auth_token=auth_token, target_account=account_name)
         root = parse_response(xml)
-        message_node = root.find("m")
+        message_node = find_by_local_name(root, "m")
         if message_node is None:
             raise RuntimeError(f"GetMsg returned no message for id={message_id}")
         message = self._parse_message_hit(message_node, account_name=account_name)
@@ -125,7 +142,30 @@ class ZimbraMailClient:
         body = f'<GetFolderRequest xmlns="{ZIMBRA_MAIL_NS}" visible="1"/>'
         xml = await self._post(body, auth_token=auth_token, target_account=account_name)
         root = parse_response(xml)
-        return self._parse_folders(find_all(root, ".//folder"))
+        return self._parse_folders(root)
+
+    def _parse_folders(self, root) -> list[ZimbraFolder]:
+        """Walk folder tree iteratively (avoids recursion overflow on large trees)."""
+        folders: list[ZimbraFolder] = []
+        for node in root.iter():
+            if local_name(node.tag) != "folder":
+                continue
+            folder_id = node.attrib.get("id")
+            name = node.attrib.get("name") or node.attrib.get("abs")
+            if not folder_id or not name:
+                continue
+            unread = node.attrib.get("u")
+            count = node.attrib.get("n")
+            folders.append(
+                ZimbraFolder(
+                    id=folder_id,
+                    name=name,
+                    path=node.attrib.get("abs"),
+                    unread_count=int(unread) if unread and unread.isdigit() else None,
+                    message_count=int(count) if count and count.isdigit() else None,
+                )
+            )
+        return folders
 
     async def fetch_all_messages(
         self,
@@ -152,27 +192,6 @@ class ZimbraMailClient:
             offset += len(batch)
 
         return all_messages
-
-    def _parse_folders(self, folder_nodes) -> list[ZimbraFolder]:
-        folders: list[ZimbraFolder] = []
-        for node in folder_nodes:
-            folder_id = node.attrib.get("id")
-            name = node.attrib.get("name") or node.attrib.get("abs")
-            if not folder_id or not name:
-                continue
-            unread = node.attrib.get("u")
-            count = node.attrib.get("n")
-            folders.append(
-                ZimbraFolder(
-                    id=folder_id,
-                    name=name,
-                    path=node.attrib.get("abs"),
-                    unread_count=int(unread) if unread and unread.isdigit() else None,
-                    message_count=int(count) if count and count.isdigit() else None,
-                )
-            )
-            folders.extend(self._parse_folders(find_all(node, "folder")))
-        return folders
 
     def _parse_message_hit(self, node, account_name: str) -> ZimbraMessage:
         subject = find_text(node, "su")
@@ -213,12 +232,194 @@ class ZimbraMailClient:
         )
 
     def _extract_body(self, node) -> str | None:
+        plain_parts: list[str] = []
+        html_parts: list[str] = []
+        other_parts: list[str] = []
+
+        for mp in find_all(node, ".//mp"):
+            content_type = mp.attrib.get("ct", "")
+            content_node = find_by_local_name(mp, "content")
+            if content_node is None:
+                continue
+            text = self._content_text(content_node)
+            if not text:
+                continue
+            if "text/plain" in content_type:
+                plain_parts.append(text)
+            elif "text/html" in content_type:
+                html_parts.append(text)
+            else:
+                other_parts.append(text)
+
+        if plain_parts:
+            return "\n\n".join(plain_parts)
+        if html_parts:
+            return "\n\n".join(html_parts)
+        if other_parts:
+            return "\n\n".join(other_parts)
+
         for part in find_all(node, ".//content"):
-            text = (part.text or "").strip()
-            if text:
-                return text
-        for part in find_all(node, ".//mp"):
-            text = (part.text or "").strip()
+            text = self._content_text(part)
             if text:
                 return text
         return find_text(node, "fr")
+
+    @staticmethod
+    def _content_text(content_node) -> str:
+        text = "".join(content_node.itertext()).strip()
+        return html_module.unescape(text) if text else ""
+
+    async def create_folder(
+        self,
+        auth_token: str,
+        account_name: str,
+        name: str,
+        parent_id: str = INBOX_FOLDER_ID,
+    ) -> str:
+        body = (
+            f'<CreateFolderRequest xmlns="{ZIMBRA_MAIL_NS}">'
+            f'<folder name="{escape_xml(name)}" l="{parent_id}"/>'
+            "</CreateFolderRequest>"
+        )
+        xml = await self._post(body, auth_token=auth_token, target_account=account_name)
+        root = parse_response(xml)
+        folder = find_all(root, "folder")
+        if folder:
+            folder_id = folder[0].attrib.get("id")
+            if folder_id:
+                return folder_id
+        folder_id = root.attrib.get("id")
+        if folder_id:
+            return folder_id
+        raise RuntimeError(f"CreateFolder did not return id for folder {name!r}")
+
+    async def get_or_create_folder(
+        self,
+        auth_token: str,
+        account_name: str,
+        name: str,
+        parent_id: str = INBOX_FOLDER_ID,
+    ) -> str:
+        folders = await self.list_folders(auth_token=auth_token, account_name=account_name)
+        for folder in folders:
+            if folder.name.lower() == name.lower():
+                return folder.id
+        return await self.create_folder(
+            auth_token=auth_token,
+            account_name=account_name,
+            name=name,
+            parent_id=parent_id,
+        )
+
+    def find_folder_id(self, folders: list[ZimbraFolder], name: str) -> str | None:
+        for folder in folders:
+            if folder.name.lower() == name.lower():
+                return folder.id
+        return None
+
+    async def move_message(
+        self,
+        auth_token: str,
+        account_name: str,
+        message_id: str,
+        folder_id: str,
+    ) -> None:
+        body = (
+            f'<MsgActionRequest xmlns="{ZIMBRA_MAIL_NS}">'
+            f'<action op="move" id="{escape_xml(message_id)}" l="{escape_xml(folder_id)}"/>'
+            "</MsgActionRequest>"
+        )
+        await self._post(body, auth_token=auth_token, target_account=account_name)
+
+    async def forward_message(
+        self,
+        auth_token: str,
+        account_name: str,
+        message_id: str,
+        to_address: str,
+        from_address: str | None = None,
+    ) -> None:
+        from_xml = ""
+        if from_address:
+            from_xml = f'<e t="f" a="{escape_xml(from_address)}"/>'
+        body = (
+            f'<SendMsgRequest xmlns="{ZIMBRA_MAIL_NS}">'
+            f'<m origid="{escape_xml(message_id)}" rt="w">'
+            f'<e t="t" a="{escape_xml(to_address)}"/>'
+            f"{from_xml}"
+            "</m>"
+            "</SendMsgRequest>"
+        )
+        await self._post(body, auth_token=auth_token, target_account=account_name)
+
+    async def send_reply(
+        self,
+        auth_token: str,
+        account_name: str,
+        message_id: str,
+        body_text: str,
+        from_address: str | None = None,
+    ) -> None:
+        from_xml = ""
+        if from_address:
+            from_xml = f'<e t="f" a="{escape_xml(from_address)}"/>'
+        body = (
+            f'<SendMsgRequest xmlns="{ZIMBRA_MAIL_NS}">'
+            f'<m origid="{escape_xml(message_id)}" rt="r">'
+            f"{from_xml}"
+            f'<mp ct="text/plain"><content>{escape_xml(body_text)}</content></mp>'
+            "</m>"
+            "</SendMsgRequest>"
+        )
+        await self._post(body, auth_token=auth_token, target_account=account_name)
+
+    async def save_draft(
+        self,
+        auth_token: str,
+        account_name: str,
+        subject: str,
+        body_text: str,
+        to_address: str | None = None,
+    ) -> str | None:
+        to_xml = ""
+        if to_address:
+            to_xml = f'<e t="t" a="{escape_xml(to_address)}"/>'
+        body = (
+            f'<SaveDraftRequest xmlns="{ZIMBRA_MAIL_NS}">'
+            f"<m>"
+            f"{to_xml}"
+            f"<su>{escape_xml(subject)}</su>"
+            f'<mp ct="text/plain"><content>{escape_xml(body_text)}</content></mp>'
+            f"</m>"
+            "</SaveDraftRequest>"
+        )
+        xml = await self._post(body, auth_token=auth_token, target_account=account_name)
+        root = parse_response(xml)
+        draft_id = root.attrib.get("id")
+        if draft_id:
+            return draft_id
+        msg = find_all(root, "m")
+        if msg:
+            return msg[0].attrib.get("id")
+        return None
+
+    async def autocomplete_gal(
+        self,
+        auth_token: str,
+        account_name: str,
+        name: str,
+    ) -> list[str]:
+        body = (
+            f'<AutoCompleteRequest xmlns="{ZIMBRA_MAIL_NS}"'
+            f' type="account" name="{escape_xml(name)}"/>'
+        )
+        xml = await self._post(body, auth_token=auth_token, target_account=account_name)
+        root = parse_response(xml)
+        matches: list[str] = []
+        for match in find_all(root, "match"):
+            email = match.attrib.get("email") or match.attrib.get("type")
+            if email and "@" in email:
+                matches.append(email)
+            elif match.text and "@" in match.text:
+                matches.append(match.text.strip())
+        return matches
