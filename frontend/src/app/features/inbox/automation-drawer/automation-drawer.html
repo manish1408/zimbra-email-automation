@@ -65,18 +65,60 @@
           <div class="spinner-border text-primary" role="status"></div>
           <p class="text-muted small mt-2 mb-0">Loading automation results…</p>
         </div>
-      } @else if (result) {
-        @if (result.dry_run) {
-          <div class="alert alert-warning py-2 small mb-3 mb-0">
-            Dry run — no Zimbra changes were applied
-          </div>
-        }
-
-        @if (result.error) {
-          <div class="alert alert-danger py-2 small mb-3">{{ result.error }}</div>
-        }
-
+      } @else {
         <div class="result-card card mb-3">
+          <div class="card-header py-2 d-flex align-items-center justify-content-between">
+            <span>Thread summary</span>
+            <span class="badge text-bg-light border text-dark small">PII redacted</span>
+          </div>
+          <div class="card-body py-3">
+            @if (summaryLoading) {
+              <div class="text-center py-3">
+                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                <p class="text-muted small mt-2 mb-0">Summarizing conversation…</p>
+              </div>
+            } @else if (threadSummary) {
+              @if (threadSummary.focus) {
+                <p class="summary-focus mb-3">{{ threadSummary.focus }}</p>
+              }
+
+              @if (threadSummary.current_points.length) {
+                <h6 class="summary-heading">Current email</h6>
+                <ul class="summary-list mb-3">
+                  @for (point of threadSummary.current_points; track $index) {
+                    <li>{{ point }}</li>
+                  }
+                </ul>
+              }
+
+              @if (threadSummary.history_points.length) {
+                <h6 class="summary-heading">Conversation history</h6>
+                <ul class="summary-list mb-0">
+                  @for (point of threadSummary.history_points; track $index) {
+                    <li>{{ point }}</li>
+                  }
+                </ul>
+              } @else if (!threadSummary.current_points.length) {
+                <p class="small text-muted mb-0">No summary points available.</p>
+              }
+            } @else {
+              <p class="small text-muted mb-0">Thread summary could not be loaded.</p>
+            }
+          </div>
+        </div>
+
+        @if (result) {
+          @if (result.dry_run) {
+            <div class="alert alert-warning py-2 small mb-3 mb-0">
+              Dry run — no Zimbra changes were applied
+            </div>
+          }
+
+          @if (result.error) {
+            <div class="alert alert-danger py-2 small mb-3">{{ result.error }}</div>
+          }
+
+          <div class="result-card card mb-3">
           <div class="card-header py-2">Classification</div>
           <div class="card-body py-3">
             @if (result.classification) {
@@ -203,19 +245,20 @@
             </div>
           </div>
         </div>
-      } @else if (!loading && !running) {
-        <div class="empty-results text-center py-5 px-2">
-          <div class="empty-icon mb-3" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M6 12.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5M3 8.062C3 6.76 4.235 5.765 5.53 5.886a26.6 26.6 0 0 0 4.94 0C11.765 5.765 13 6.76 13 8.062V11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>
-              <path d="M8 1a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v2.5a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5V6a2 2 0 0 1 2-2h1V3a2 2 0 0 1 2-2"/>
-            </svg>
+        } @else if (!threadSummary && !summaryLoading) {
+          <div class="empty-results text-center py-5 px-2">
+            <div class="empty-icon mb-3" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M6 12.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5M3 8.062C3 6.76 4.235 5.765 5.53 5.886a26.6 26.6 0 0 0 4.94 0C11.765 5.765 13 6.76 13 8.062V11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>
+                <path d="M8 1a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v2.5a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5V6a2 2 0 0 1 2-2h1V3a2 2 0 0 1 2-2"/>
+              </svg>
+            </div>
+            <p class="mb-1 fw-semibold">No automation yet</p>
+            <p class="text-muted small mb-0">
+              Run automation to classify this email, route it, and generate acknowledgement or draft replies.
+            </p>
           </div>
-          <p class="mb-1 fw-semibold">No automation yet</p>
-          <p class="text-muted small mb-0">
-            Run automation to classify this email, route it, and generate acknowledgement or draft replies.
-          </p>
-        </div>
+        }
       }
     </div>
   </div>

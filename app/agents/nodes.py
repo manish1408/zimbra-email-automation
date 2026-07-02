@@ -14,7 +14,7 @@ from app.agents.tools import build_zimbra_tools, execute_tool_call
 from app.config import Settings
 from app.db.email_repository import EmailRepository
 from app.services.email_sync import EmailSyncService
-from app.services.llm import create_chat_llm, llm_configured
+from app.services.llm import create_chat_llm, llm_configured, ainvoke_structured
 
 INTENT_TO_NODE: dict[IntentCategory, str] = {
     "urgent": "urgent_escalation",
@@ -172,14 +172,15 @@ def make_nodes(ctx: NodeContext) -> dict[str, Any]:
     async def classify_intent(state: AgentState) -> dict:
         messages = state.get("enriched_messages") or state.get("messages") or []
         instruction = state.get("instruction") or ""
-        structured_llm = ctx.llm.with_structured_output(ClassificationBatch)
         prompt = (
             "Classify each email into exactly one intent: urgent, compliance, sales, "
             "support, newsletter, or general. Flag compliance_risk for legal/PII/finance topics.\n"
             f"User focus: {instruction or 'none'}\n\n"
             f"Emails:\n{_message_lines(messages, include_body=True)}"
         )
-        result: ClassificationBatch = await structured_llm.ainvoke(
+        result: ClassificationBatch = await ainvoke_structured(
+            ctx.llm,
+            ClassificationBatch,
             [
                 SystemMessage(
                     content=(
@@ -190,7 +191,7 @@ def make_nodes(ctx: NodeContext) -> dict[str, Any]:
                     )
                 ),
                 HumanMessage(content=prompt),
-            ]
+            ],
         )
         classifications: list[LegacyMessageClassification] = [
             LegacyMessageClassification(**item.model_dump()) for item in result.classifications

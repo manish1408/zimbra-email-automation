@@ -3,6 +3,7 @@ import { Observable } from 'rxjs';
 import {
   MessageAutomationResult,
   MessageAutomationRunListResponse,
+  ThreadSummary,
 } from '../models/email.models';
 import { ApiClient } from './api-client.service';
 
@@ -32,6 +33,17 @@ export class AutomationService {
     return this.api.get<MessageAutomationRunListResponse>(
       `${this.basePath(email, messageId)}/runs`,
       { limit },
+    );
+  }
+
+  getThreadSummary(
+    email: string,
+    messageId: string,
+    refresh = false,
+  ): Observable<ThreadSummary> {
+    return this.api.get<ThreadSummary>(
+      `/automation/users/${this.api.encodeEmail(email)}/messages/${encodeURIComponent(messageId)}/thread-summary`,
+      refresh ? { refresh: true } : undefined,
     );
   }
 }

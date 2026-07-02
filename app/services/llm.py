@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+import re
+from typing import Any, TypeVar
 
 import httpx
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
+
 from app.config import Settings
+
+T = TypeVar("T", bound=BaseModel)
 
 
 def _messages_to_prompt(messages: list[BaseMessage]) -> str:
@@ -27,6 +32,51 @@ def _messages_to_prompt(messages: list[BaseMessage]) -> str:
     return "\n\n".join(parts)
 
 
+def _strip_thinking(text: str) -> str:
+    pattern = r"<\s*think\s*>[\s\S]*?<\s*/\s*think\s*>"
+    return re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
+
+
+def _extract_json_object(text: str) -> dict[str, Any]:
+    cleaned = _strip_thinking(text.strip())
+    if "```" in cleaned:
+        match = re.search(r"```(?:json)?\s*([\s\S]*?)```", cleaned, flags=re.IGNORECASE)
+        if match:
+            cleaned = match.group(1).strip()
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError(f"Model did not return JSON. Raw output: {text[:500]}")
+    return json.loads(cleaned[start : end + 1])
+
+
+async def ainvoke_structured(
+    llm: BaseChatModel,
+    schema: type[T],
+    messages: list[BaseMessage],
+) -> T:
+    """Structured output for OpenAI native models and JSON-prompt fallback for Vast AI."""
+    if isinstance(llm, ChatOpenAI):
+        structured = llm.with_structured_output(schema)
+        return await structured.ainvoke(messages)
+
+    schema_hint = json.dumps(schema.model_json_schema(), indent=2)
+    augmented = [
+        *messages,
+        HumanMessage(
+            content=(
+                "Return ONLY valid JSON matching this schema. "
+                "No markdown fences, no commentary, no extra keys.\n"
+                f"{schema_hint}"
+            )
+        ),
+    ]
+    result = await llm.ainvoke(augmented)
+    content = result.content if isinstance(result, AIMessage) else str(getattr(result, "content", result))
+    data = _extract_json_object(str(content))
+    return schema.model_validate(data)
+
+
 class VastAIChatModel(BaseChatModel):
     """Ollama-compatible /api/generate client for Vast.ai tunnel endpoints."""
 
@@ -34,7 +84,7 @@ class VastAIChatModel(BaseChatModel):
     token: str
     model: str
     temperature: float = 0.1
-    cookie_name: str = "C.39613280_auth_token"
+    cookie_name: str = ""
     timeout_seconds: float = 300.0
 
     @property
@@ -46,10 +96,10 @@ class VastAIChatModel(BaseChatModel):
         return f"{base}/api/generate?token={self.token}"
 
     def _build_headers(self) -> dict[str, str]:
-        return {
-            "Content-Type": "application/json",
-            "Cookie": f"{self.cookie_name}={self.token}",
-        }
+        headers = {"Content-Type": "application/json"}
+        if self.cookie_name:
+            headers["Cookie"] = f"{self.cookie_name}={self.token}"
+        return headers
 
     def _parse_response(self, payload: dict[str, Any]) -> str:
         if payload.get("error"):

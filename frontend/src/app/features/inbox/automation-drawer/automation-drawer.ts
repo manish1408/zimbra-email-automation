@@ -11,7 +11,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { catchError, of } from 'rxjs';
-import { MessageAutomationResult, MessageSummary } from '../../../core/models/email.models';
+import { MessageAutomationResult, MessageSummary, ThreadSummary } from '../../../core/models/email.models';
 import { AutomationService } from '../../../core/services/automation.service';
 
 @Component({
@@ -32,7 +32,9 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
   @Output() resultUpdated = new EventEmitter<MessageAutomationResult | null>();
 
   result: MessageAutomationResult | null = null;
+  threadSummary: ThreadSummary | null = null;
   loading = false;
+  summaryLoading = false;
   running = false;
   loadError = '';
   forceRerun = false;
@@ -44,9 +46,11 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
     }
     if ((changes['open'] || changes['message']) && this.open && this.message && this.account) {
       this.loadResult();
+      this.loadThreadSummary();
     }
     if (changes['open'] && !this.open) {
       this.result = null;
+      this.threadSummary = null;
       this.loadError = '';
       this.showHistory = false;
     }
@@ -76,6 +80,7 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
       next: (res) => {
         this.result = res;
         this.running = false;
+        this.applyThreadSummaryFromResult(res);
         this.resultUpdated.emit(res);
         this.refreshRuns();
       },
@@ -97,11 +102,47 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
         next: (res) => {
           this.result = res;
           this.loading = false;
+          this.applyThreadSummaryFromResult(res);
         },
         error: () => {
           this.loading = false;
         },
       });
+  }
+
+  loadThreadSummary(): void {
+    if (!this.account || !this.message) return;
+    this.summaryLoading = true;
+    this.automationService
+      .getThreadSummary(this.account, this.message.id)
+      .pipe(catchError(() => of(null)))
+      .subscribe({
+        next: (summary) => {
+          if (summary) {
+            this.threadSummary = summary;
+          }
+          this.summaryLoading = false;
+        },
+        error: () => {
+          this.summaryLoading = false;
+        },
+      });
+  }
+
+  private applyThreadSummaryFromResult(result: MessageAutomationResult | null): void {
+    const summary = result?.thread_summary;
+    if (!summary || typeof summary !== 'object') return;
+    this.threadSummary = {
+      account: result?.account ?? this.account,
+      message_id: result?.message_id ?? this.message?.id ?? '',
+      history_points: Array.isArray(summary['history_points'])
+        ? (summary['history_points'] as string[])
+        : [],
+      current_points: Array.isArray(summary['current_points'])
+        ? (summary['current_points'] as string[])
+        : [],
+      focus: typeof summary['focus'] === 'string' ? summary['focus'] : '',
+    };
   }
 
   refreshRuns(): void {

@@ -175,6 +175,7 @@ class MessageMetadata(BaseModel):
     classification: dict | None = None
     draft_reply_text: str | None = None
     ack_body_text: str | None = None
+    thread_summary: dict | None = None
     report: dict | None = None
     error: str | None = None
     processed_at: str | None = None
@@ -183,6 +184,14 @@ class MessageMetadata(BaseModel):
 
 class MessageAutomationRunRequest(BaseModel):
     force: bool = False
+
+
+class ThreadSummaryResponse(BaseModel):
+    account: str
+    message_id: str
+    history_points: list[str] = Field(default_factory=list)
+    current_points: list[str] = Field(default_factory=list)
+    focus: str = ""
 
 
 class MessageAutomationRunSummary(BaseModel):
@@ -208,6 +217,7 @@ class MessageAutomationResult(BaseModel):
     actions: dict | None = None
     draft_reply_text: str | None = None
     ack_body_text: str | None = None
+    thread_summary: dict | None = None
     report: dict = Field(default_factory=dict)
     error: str | None = None
     processed_at: str | None = None

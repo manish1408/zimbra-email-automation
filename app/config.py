@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     vastai_base_url: str = ""
     vastai_token: str = ""
     vastai_model: str = "qwen3.5:35b"
-    vastai_cookie_name: str = "C.39613280_auth_token"
+    vastai_cookie_name: str = ""
     vastai_timeout_seconds: float = 300.0
 
     agent_inbox_limit: int = 10

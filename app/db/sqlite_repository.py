@@ -94,6 +94,10 @@ _MIGRATION_V2_COLUMNS = [
     "ALTER TABLE message_actions ADD COLUMN report_json TEXT",
 ]
 
+_MIGRATION_V3_COLUMNS = [
+    "ALTER TABLE message_actions ADD COLUMN thread_summary_json TEXT",
+]
+
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
@@ -124,6 +128,11 @@ class SqliteEmailRepository:
         conn.row_factory = aiosqlite.Row
         await conn.executescript(_SCHEMA)
         for stmt in _MIGRATION_V2_COLUMNS:
+            try:
+                await conn.execute(stmt)
+            except aiosqlite.OperationalError:
+                pass
+        for stmt in _MIGRATION_V3_COLUMNS:
             try:
                 await conn.execute(stmt)
             except aiosqlite.OperationalError:
@@ -350,6 +359,7 @@ class SqliteEmailRepository:
         ack_body_text: str | None = None,
         automation_thread_id: str | None = None,
         report_json: dict[str, Any] | None = None,
+        thread_summary: dict[str, Any] | None = None,
     ) -> None:
         now = _utc_now()
         await conn.execute(
@@ -358,8 +368,8 @@ class SqliteEmailRepository:
                 zimbra_id, account, category, is_spam, folder_path,
                 forwarded_to, ack_sent_at, draft_saved, classification_json,
                 error, processed_at, draft_reply_text, ack_body_text,
-                automation_thread_id, report_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                automation_thread_id, report_json, thread_summary_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(zimbra_id, account) DO UPDATE SET
                 category = excluded.category,
                 is_spam = excluded.is_spam,
@@ -373,7 +383,10 @@ class SqliteEmailRepository:
                 draft_reply_text = excluded.draft_reply_text,
                 ack_body_text = excluded.ack_body_text,
                 automation_thread_id = excluded.automation_thread_id,
-                report_json = excluded.report_json
+                report_json = excluded.report_json,
+                thread_summary_json = COALESCE(
+                    excluded.thread_summary_json, message_actions.thread_summary_json
+                )
             """,
             (
                 zimbra_id,
@@ -391,7 +404,26 @@ class SqliteEmailRepository:
                 ack_body_text,
                 automation_thread_id,
                 json.dumps(report_json, default=str) if report_json else None,
+                json.dumps(thread_summary) if thread_summary else None,
             ),
+        )
+
+    async def save_thread_summary(
+        self,
+        conn: aiosqlite.Connection,
+        account: str,
+        zimbra_id: str,
+        thread_summary: dict[str, Any],
+    ) -> None:
+        now = _utc_now()
+        await conn.execute(
+            """
+            INSERT INTO message_actions (zimbra_id, account, processed_at, thread_summary_json)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(zimbra_id, account) DO UPDATE SET
+                thread_summary_json = excluded.thread_summary_json
+            """,
+            (zimbra_id, account, now, json.dumps(thread_summary)),
         )
 
     async def get_message_action(
@@ -477,6 +509,11 @@ class SqliteEmailRepository:
             data["report"] = json.loads(report)
         elif report:
             data["report"] = report
+        thread_summary = data.get("thread_summary_json")
+        if isinstance(thread_summary, str) and thread_summary:
+            data["thread_summary"] = json.loads(thread_summary)
+        elif thread_summary:
+            data["thread_summary"] = thread_summary
         return data
 
     @staticmethod

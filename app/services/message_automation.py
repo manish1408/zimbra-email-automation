@@ -12,11 +12,13 @@ from app.db.email_repository import EmailRepository
 from app.models.schemas import (
     MessageAutomationResult,
     MessageAutomationRunSummary,
+    ThreadSummaryResponse,
 )
 from app.services.email_sync import EmailSyncService
 from app.services.llm import llm_configured, llm_not_configured_message
 from app.services.routing import RoutingResolver
 from app.services.scheduled_pipeline import ScheduledPipeline
+from app.services.thread_summary import ThreadSummaryService
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,7 @@ def _result_from_db(
     actions = None
     draft_reply_text = None
     ack_body_text = None
+    thread_summary = None
     processed_at = None
 
     if action:
@@ -89,6 +92,7 @@ def _result_from_db(
         }
         draft_reply_text = action.get("draft_reply_text")
         ack_body_text = action.get("ack_body_text")
+        thread_summary = action.get("thread_summary")
         processed_at = action.get("processed_at")
         thread_id = thread_id or action.get("automation_thread_id")
         report = report or action.get("report")
@@ -109,6 +113,7 @@ def _result_from_db(
         actions=actions,
         draft_reply_text=draft_reply_text,
         ack_body_text=ack_body_text,
+        thread_summary=thread_summary,
         report=report or {},
         error=error,
         processed_at=processed_at,
@@ -186,6 +191,12 @@ class MessageAutomationService:
 
         classification = classifications[0] if classifications else None
         action = actions_taken[0] if actions_taken else None
+        thread_summaries = result.get("thread_summaries") or []
+        thread_summary = (
+            thread_summaries[0]
+            if thread_summaries
+            else (action.get("thread_summary") if action else None)
+        )
 
         if action_errors or (action and action.get("error")):
             status = "failed"
@@ -225,10 +236,94 @@ class MessageAutomationService:
             actions=_actions_from_action_taken(action),
             draft_reply_text=draft_reply_text,
             ack_body_text=ack_body_text,
+            thread_summary=thread_summary,
             report=report,
             error=error,
             processed_at=None,
         )
+
+    async def get_thread_summary(
+        self,
+        account: str,
+        message_id: str,
+        *,
+        refresh: bool = False,
+    ) -> ThreadSummaryResponse:
+        if not llm_configured(self.settings):
+            raise ValueError(llm_not_configured_message(self.settings))
+
+        conn = await self.repository.connect()
+        try:
+            if not refresh:
+                action = await self.repository.get_message_action(conn, account, message_id)
+                if action and action.get("thread_summary"):
+                    summary = action["thread_summary"]
+                    return ThreadSummaryResponse(
+                        account=account,
+                        message_id=message_id,
+                        history_points=summary.get("history_points") or [],
+                        current_points=summary.get("current_points") or [],
+                        focus=summary.get("focus") or "",
+                    )
+        finally:
+            await conn.close()
+
+        message = await self._load_message_dict(account, message_id)
+        if not message:
+            raise LookupError(f"Message {message_id} not found for {account}")
+
+        related: list[dict[str, Any]] = []
+        try:
+            thread_messages = await self.email_service.search_thread_messages(
+                account,
+                message.get("subject"),
+                exclude_id=message_id,
+                limit=4,
+            )
+            related = [item.model_dump(by_alias=True) for item in thread_messages]
+        except Exception:
+            related = []
+
+        summary = await ThreadSummaryService(self.settings).summarize(message, related)
+
+        conn = await self.repository.connect()
+        try:
+            await self.repository.save_thread_summary(conn, account, message_id, summary)
+            if hasattr(conn, "commit"):
+                await conn.commit()
+        finally:
+            await conn.close()
+
+        return ThreadSummaryResponse(
+            account=account,
+            message_id=message_id,
+            history_points=summary.get("history_points") or [],
+            current_points=summary.get("current_points") or [],
+            focus=summary.get("focus") or "",
+        )
+
+    async def _load_message_dict(
+        self, account: str, message_id: str
+    ) -> dict[str, Any] | None:
+        conn = await self.repository.connect()
+        try:
+            detail = await self.repository.get_message(conn, account, message_id)
+            if detail:
+                if not detail.body:
+                    try:
+                        full = await self.email_service.get_message(account, message_id)
+                        detail.body = full.body
+                    except Exception:
+                        pass
+                return EmailRepository.to_summary_dict(detail)
+        finally:
+            await conn.close()
+
+        try:
+            detail = await self.email_service.get_message(account, message_id)
+            return detail.model_dump(by_alias=True)
+        except Exception:
+            return None
 
     async def get_result(
         self,

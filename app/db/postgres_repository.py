@@ -250,6 +250,7 @@ class PostgresEmailRepository:
         ack_body_text: str | None = None,
         automation_thread_id: str | None = None,
         report_json: dict[str, Any] | None = None,
+        thread_summary: dict[str, Any] | None = None,
     ) -> None:
         now = _utc_now()
         ack_ts = None
@@ -261,15 +262,16 @@ class PostgresEmailRepository:
             )
         classification_json = json.dumps(classification) if classification else None
         report_str = json.dumps(report_json, default=str) if report_json else None
+        thread_summary_json = json.dumps(thread_summary) if thread_summary else None
         await conn.execute(
             """
             INSERT INTO message_actions (
                 zimbra_id, account, category, is_spam, folder_path,
                 forwarded_to, ack_sent_at, draft_saved, classification_json,
                 error, processed_at, draft_reply_text, ack_body_text,
-                automation_thread_id, report_json
+                automation_thread_id, report_json, thread_summary_json
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11,
-                      $12, $13, $14, $15::jsonb)
+                      $12, $13, $14, $15::jsonb, $16::jsonb)
             ON CONFLICT (zimbra_id, account) DO UPDATE SET
                 category = EXCLUDED.category,
                 is_spam = EXCLUDED.is_spam,
@@ -283,7 +285,10 @@ class PostgresEmailRepository:
                 draft_reply_text = EXCLUDED.draft_reply_text,
                 ack_body_text = EXCLUDED.ack_body_text,
                 automation_thread_id = EXCLUDED.automation_thread_id,
-                report_json = EXCLUDED.report_json
+                report_json = EXCLUDED.report_json,
+                thread_summary_json = COALESCE(
+                    EXCLUDED.thread_summary_json, message_actions.thread_summary_json
+                )
             """,
             zimbra_id,
             account,
@@ -300,6 +305,28 @@ class PostgresEmailRepository:
             ack_body_text,
             automation_thread_id,
             report_str,
+            thread_summary_json,
+        )
+
+    async def save_thread_summary(
+        self,
+        conn: asyncpg.Connection,
+        account: str,
+        zimbra_id: str,
+        thread_summary: dict[str, Any],
+    ) -> None:
+        now = _utc_now()
+        await conn.execute(
+            """
+            INSERT INTO message_actions (zimbra_id, account, processed_at, thread_summary_json)
+            VALUES ($1, $2, $3, $4::jsonb)
+            ON CONFLICT (zimbra_id, account) DO UPDATE SET
+                thread_summary_json = EXCLUDED.thread_summary_json
+            """,
+            zimbra_id,
+            account,
+            now,
+            json.dumps(thread_summary),
         )
 
     async def get_message_action(
@@ -475,6 +502,9 @@ class PostgresEmailRepository:
         report = data.get("report_json")
         if isinstance(report, str):
             report = json.loads(report) if report else None
+        thread_summary = data.get("thread_summary_json")
+        if isinstance(thread_summary, str):
+            thread_summary = json.loads(thread_summary) if thread_summary else None
         ack_sent_at = data.get("ack_sent_at")
         processed_at = data.get("processed_at")
         return {
@@ -491,6 +521,7 @@ class PostgresEmailRepository:
             "ack_body_text": data.get("ack_body_text"),
             "automation_thread_id": data.get("automation_thread_id"),
             "report": report,
+            "thread_summary": thread_summary,
             "error": data.get("error"),
             "processed_at": processed_at.isoformat() if hasattr(processed_at, "isoformat") else processed_at,
         }

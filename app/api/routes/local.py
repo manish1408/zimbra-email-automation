@@ -109,6 +109,7 @@ async def get_message_metadata(
             classification=action.get("classification"),
             draft_reply_text=action.get("draft_reply_text"),
             ack_body_text=action.get("ack_body_text"),
+            thread_summary=action.get("thread_summary"),
             report=action.get("report"),
             error=action.get("error"),
             processed_at=action.get("processed_at"),

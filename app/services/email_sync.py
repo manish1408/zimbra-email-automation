@@ -18,6 +18,7 @@ from app.models.schemas import (
 )
 from app.services.zimbra.admin_client import ZimbraAdminClient
 from app.services.zimbra.mail_client import ZimbraMailClient, ZimbraMessage
+from app.services.email_thread import normalize_subject
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +153,33 @@ class EmailSyncService:
     async def autocomplete_person(self, user_email: str, name: str) -> list[str]:
         token = await self._delegate_token(user_email)
         return await self.mail.autocomplete_gal(token, user_email, name)
+
+    async def search_thread_messages(
+        self,
+        user_email: str,
+        subject: str | None,
+        *,
+        exclude_id: str | None = None,
+        limit: int = 5,
+    ) -> list[MessageSummary]:
+        normalized = normalize_subject(subject)
+        if not normalized:
+            return []
+
+        safe_subject = normalized.replace('"', "")
+        query = f'subject:"{safe_subject}"'
+        response = await self._search_mailbox(
+            user_email=user_email,
+            query=query,
+            limit=limit + 1,
+            offset=0,
+            response_class=MessageSearchResponse,
+        )
+        messages = [
+            m for m in response.messages if not exclude_id or m.id != exclude_id
+        ]
+        messages.sort(key=lambda m: m.date or "")
+        return messages[:limit]
 
     async def poll_inbox(
         self,

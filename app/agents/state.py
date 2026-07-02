@@ -45,7 +45,15 @@ class MessageActionRecord(TypedDict, total=False):
     draft_saved: bool
     draft_reply_text: str | None
     ack_body_text: str | None
+    thread_summary: dict[str, Any] | None
     error: str | None
+
+
+class ThreadSummaryRecord(TypedDict, total=False):
+    message_id: str
+    history_points: list[str]
+    current_points: list[str]
+    focus: str
 
 
 class AgentState(TypedDict, total=False):
@@ -59,6 +67,7 @@ class AgentState(TypedDict, total=False):
     messages: list[dict[str, Any]]
     enriched_messages: list[dict[str, Any]]
     classifications: list[MessageClassification]
+    thread_summaries: list[ThreadSummaryRecord]
     actions_taken: list[MessageActionRecord]
     action_errors: list[str]
     report: dict[str, Any]
