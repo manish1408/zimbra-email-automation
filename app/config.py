@@ -26,13 +26,22 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+
+    # LLM provider: vastai (Ollama /api/generate) or openai
+    llm_provider: str = "vastai"
+    vastai_base_url: str = ""
+    vastai_token: str = ""
+    vastai_model: str = "qwen3.5:35b"
+    vastai_cookie_name: str = "C.39613280_auth_token"
+    vastai_timeout_seconds: float = 300.0
+
     agent_inbox_limit: int = 10
     agent_checkpoint_path: str = "data/agent_checkpoints.db"
 
     # Scheduled sync + AI analysis
     sync_target_email: str | None = None
     sync_interval_hours: float = 6.0
-    database_url: str = "postgresql://zimbra:zimbra_dev@localhost:5432/zimbra_automation"
+    database_url: str = "sqlite:///data/emails.db"
     sync_fetch_bodies: bool = True
     sync_poll_interval_seconds: int = 60
     sync_inbox_query: str = "in:inbox"
@@ -40,6 +49,7 @@ class Settings(BaseSettings):
 
     # Automation actions
     automation_dry_run: bool = True
+    automation_move_to_folders: bool = True
     auto_send_ack: bool = True
     routing_rules_path: str = "config/routing_rules.yaml"
     employees_path: str = "config/employees.yaml"

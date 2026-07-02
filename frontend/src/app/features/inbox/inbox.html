@@ -56,6 +56,9 @@
   @if (error) {
     <div class="alert alert-danger m-3 mb-0">{{ error }}</div>
   }
+  @if (syncMessage) {
+    <div class="alert alert-success m-3 mb-0">{{ syncMessage }}</div>
+  }
 
   @if (!selectedEmail) {
     <div class="empty-state d-flex flex-column align-items-center justify-content-center">
@@ -128,12 +131,14 @@
         } @else {
           <div class="message-list">
             @for (msg of messages; track msg.id) {
-              <button
-                type="button"
+              <div
                 class="message-row"
+                role="button"
+                tabindex="0"
                 [class.unread]="msg.is_read === false"
                 [class.selected]="selectedMessage?.id === msg.id"
                 (click)="selectMessage(msg)"
+                (keydown.enter)="selectMessage(msg)"
               >
                 <div class="message-row-top">
                   @if (msg.is_read === false) {
@@ -141,10 +146,32 @@
                   }
                   <span class="from text-truncate">{{ msg.from || '(unknown)' }}</span>
                   <span class="date small text-muted">{{ formatDate(msg.date) }}</span>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary automation-row-btn"
+                    title="Open automation"
+                    aria-label="Open automation for this message"
+                    (click)="openAutomationDrawer(msg, $event)"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                      <path d="M6 12.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5M3 8.062C3 6.76 4.235 5.765 5.53 5.886a26.6 26.6 0 0 0 4.94 0C11.765 5.765 13 6.76 13 8.062V11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>
+                      <path d="M8 1a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v2.5a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5V6a2 2 0 0 1 2-2h1V3a2 2 0 0 1 2-2"/>
+                    </svg>
+                  </button>
                 </div>
-                <div class="subject text-truncate">{{ msg.subject || '(no subject)' }}</div>
+                <div class="subject-line">
+                  <span class="subject text-truncate">{{ msg.subject || '(no subject)' }}</span>
+                  @if (rowMetadata(msg.id)?.category) {
+                    <span
+                      class="badge category-badge"
+                      [ngClass]="categoryClass(rowMetadata(msg.id)?.category)"
+                    >
+                      {{ rowMetadata(msg.id)?.category }}
+                    </span>
+                  }
+                </div>
                 <div class="snippet text-truncate text-muted small">{{ msg.fragment }}</div>
-              </button>
+              </div>
             }
           </div>
         }
@@ -170,7 +197,20 @@
           <div class="p-4 text-muted text-center">Select a message to view details.</div>
         } @else {
           <div class="detail-header border-bottom">
-            <h1 class="h5 mb-2">{{ selectedMessage.subject || '(no subject)' }}</h1>
+            <div class="d-flex align-items-start gap-2 mb-2">
+              <h1 class="h5 mb-0 flex-grow-1">{{ selectedMessage.subject || '(no subject)' }}</h1>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-primary automation-header-btn"
+                (click)="openAutomationDrawer(selectedMessage, $event)"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="me-1" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M6 12.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5M3 8.062C3 6.76 4.235 5.765 5.53 5.886a26.6 26.6 0 0 0 4.94 0C11.765 5.765 13 6.76 13 8.062V11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>
+                  <path d="M8 1a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v2.5a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5V6a2 2 0 0 1 2-2h1V3a2 2 0 0 1 2-2"/>
+                </svg>
+                Automation
+              </button>
+            </div>
             <div class="meta-grid small">
               <div><span class="text-muted">From</span> {{ selectedMessage.from || '—' }}</div>
               <div><span class="text-muted">To</span> {{ (selectedMessage.to || []).join(', ') || '—' }}</div>
@@ -187,35 +227,25 @@
           </div>
 
           @if (selectedMetadata) {
-            <div class="automation-panel border-bottom">
-              <div class="pane-header small">Automation</div>
-              <div class="px-3 pb-3 d-flex flex-wrap gap-2 align-items-center">
-                @if (selectedMetadata.category) {
-                  <span class="badge" [ngClass]="categoryClass(selectedMetadata.category)">
-                    {{ selectedMetadata.category }}
-                  </span>
-                }
-                @if (selectedMetadata.is_spam) {
-                  <span class="badge bg-danger">Spam</span>
-                }
-                @if (selectedMetadata.forwarded_to) {
-                  <span class="badge bg-info text-dark">Routed → {{ selectedMetadata.forwarded_to }}</span>
-                }
-                @if (selectedMetadata.ack_sent_at) {
-                  <span class="badge bg-success">Ack sent</span>
-                }
-                @if (selectedMetadata.draft_saved) {
-                  <span class="badge bg-secondary">Draft saved</span>
-                }
-                @if (selectedMetadata.analyzed_at) {
-                  <span class="text-muted small">Analyzed {{ formatDate(selectedMetadata.analyzed_at) }}</span>
-                }
-              </div>
-              @if (selectedMetadata.classification?.['reasoning']) {
-                <div class="px-3 pb-3 small text-muted">
-                  {{ selectedMetadata.classification?.['reasoning'] }}
-                </div>
+            <div class="automation-summary border-bottom px-3 py-2 d-flex flex-wrap gap-2 align-items-center">
+              @if (selectedMetadata.category) {
+                <span class="badge" [ngClass]="categoryClass(selectedMetadata.category)">
+                  {{ selectedMetadata.category }}
+                </span>
               }
+              @if (selectedMetadata.is_spam) {
+                <span class="badge bg-danger">Spam</span>
+              }
+              @if (selectedMetadata.forwarded_to) {
+                <span class="badge bg-info text-dark">→ {{ selectedMetadata.forwarded_to }}</span>
+              }
+              <button
+                type="button"
+                class="btn btn-link btn-sm p-0 ms-auto"
+                (click)="openAutomationDrawer(selectedMessage, $event)"
+              >
+                View full automation details
+              </button>
             </div>
           }
 
@@ -249,3 +279,11 @@
     </div>
   }
 </div>
+
+<app-automation-drawer
+  [account]="selectedEmail"
+  [message]="automationMessage"
+  [open]="automationOpen"
+  (closed)="closeAutomationDrawer()"
+  (resultUpdated)="onAutomationUpdated($event)"
+/>

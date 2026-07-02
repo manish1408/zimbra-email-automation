@@ -66,14 +66,16 @@ export interface ConnectionTestResponse {
   message: string;
 }
 
+export interface AccountMessages {
+  user: User;
+  message_count: number;
+  messages: MessageSummary[];
+}
+
 export interface SyncResult {
   accounts_processed: number;
   total_messages: number;
-  accounts: Array<{
-    user: User;
-    message_count: number;
-    messages: MessageSummary[];
-  }>;
+  accounts: AccountMessages[];
 }
 
 export interface AgentRunRequest {
@@ -106,9 +108,51 @@ export interface MessageMetadata {
   ack_sent_at?: string | null;
   draft_saved: boolean;
   classification?: Record<string, unknown> | null;
+  draft_reply_text?: string | null;
+  ack_body_text?: string | null;
+  report?: Record<string, unknown> | null;
   error?: string | null;
   processed_at?: string | null;
   analyzed_at?: string | null;
+}
+
+export interface MessageAutomationRunRequest {
+  force?: boolean;
+}
+
+export interface MessageAutomationRunSummary {
+  id: number;
+  thread_id: string;
+  status: string;
+  dry_run: boolean;
+  classification?: Record<string, unknown> | null;
+  actions?: Record<string, unknown> | null;
+  draft_reply_text?: string | null;
+  ack_body_text?: string | null;
+  error?: string | null;
+  created_at?: string | null;
+}
+
+export interface MessageAutomationResult {
+  account: string;
+  message_id: string;
+  thread_id: string;
+  status: string;
+  dry_run: boolean;
+  classification?: Record<string, unknown> | null;
+  actions?: Record<string, unknown> | null;
+  draft_reply_text?: string | null;
+  ack_body_text?: string | null;
+  report: Record<string, unknown>;
+  error?: string | null;
+  processed_at?: string | null;
+  runs?: MessageAutomationRunSummary[];
+}
+
+export interface MessageAutomationRunListResponse {
+  account: string;
+  message_id: string;
+  runs: MessageAutomationRunSummary[];
 }
 
 export interface LocalMailboxStats {

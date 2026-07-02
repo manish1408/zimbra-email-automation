@@ -7,7 +7,6 @@ from typing import Any
 from typing_extensions import TypedDict
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from app.agents.state import AgentState, IntentCategory
@@ -15,6 +14,7 @@ from app.agents.tools import build_zimbra_tools, execute_tool_call
 from app.config import Settings
 from app.db.email_repository import EmailRepository
 from app.services.email_sync import EmailSyncService
+from app.services.llm import create_chat_llm, llm_configured
 
 INTENT_TO_NODE: dict[IntentCategory, str] = {
     "urgent": "urgent_escalation",
@@ -68,19 +68,15 @@ class NodeContext:
         self.settings = settings
         self.email_repository = email_repository
         self.tools = build_zimbra_tools(email_service)
-        self._llm: ChatOpenAI | None = None
+        self._llm = None
         self._llm_with_tools = None
 
     @property
-    def llm(self) -> ChatOpenAI:
+    def llm(self):
         if self._llm is None:
-            if not self.settings.openai_api_key:
-                raise ValueError("OPENAI_API_KEY is not configured")
-            self._llm = ChatOpenAI(
-                model=self.settings.openai_model,
-                api_key=self.settings.openai_api_key,
-                temperature=0.2,
-            )
+            if not llm_configured(self.settings):
+                raise ValueError("LLM is not configured")
+            self._llm = create_chat_llm(self.settings, temperature=0.2)
         return self._llm
 
     @property

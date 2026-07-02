@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { SyncResult } from '../models/email.models';
+import { AccountMessages, SyncResult } from '../models/email.models';
 import { ApiClient } from './api-client.service';
 
 @Injectable({ providedIn: 'root' })
@@ -14,8 +14,8 @@ export class SyncService {
     });
   }
 
-  syncUser(email: string, query?: string): Observable<SyncResult> {
-    return this.api.post<SyncResult>(
+  syncUser(email: string, query?: string): Observable<AccountMessages> {
+    return this.api.post<AccountMessages>(
       `/sync/users/${this.api.encodeEmail(email)}`,
       undefined,
       query ? { query } : undefined,

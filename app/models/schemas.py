@@ -91,6 +91,29 @@ class AccountMessages(BaseModel):
     messages: list[MessageSummary]
 
 
+class MailboxAutomationRunResponse(BaseModel):
+    account: str
+    thread_id: str | None = None
+    analysis_run_id: int | None = None
+    message_count: int = 0
+    classified: int | None = None
+    moved: int | None = None
+    spam: int | None = None
+    forwarded: int | None = None
+    acked: int | None = None
+    drafts: int | None = None
+    dry_run: bool = False
+    move_to_folders: bool = True
+    skipped: bool = False
+    reason: str | None = None
+    errors: list[str] = Field(default_factory=list)
+    summary: dict = Field(default_factory=dict)
+
+
+class AccountSyncResult(AccountMessages):
+    automation: MailboxAutomationRunResponse | None = None
+
+
 class SyncResult(BaseModel):
     accounts_processed: int
     total_messages: int
@@ -150,9 +173,51 @@ class MessageMetadata(BaseModel):
     ack_sent_at: str | None = None
     draft_saved: bool = False
     classification: dict | None = None
+    draft_reply_text: str | None = None
+    ack_body_text: str | None = None
+    report: dict | None = None
     error: str | None = None
     processed_at: str | None = None
     analyzed_at: str | None = None
+
+
+class MessageAutomationRunRequest(BaseModel):
+    force: bool = False
+
+
+class MessageAutomationRunSummary(BaseModel):
+    id: int
+    thread_id: str
+    status: str
+    dry_run: bool = False
+    classification: dict | None = None
+    actions: dict | None = None
+    draft_reply_text: str | None = None
+    ack_body_text: str | None = None
+    error: str | None = None
+    created_at: str | None = None
+
+
+class MessageAutomationResult(BaseModel):
+    account: str
+    message_id: str
+    thread_id: str
+    status: str
+    dry_run: bool = False
+    classification: dict | None = None
+    actions: dict | None = None
+    draft_reply_text: str | None = None
+    ack_body_text: str | None = None
+    report: dict = Field(default_factory=dict)
+    error: str | None = None
+    processed_at: str | None = None
+    runs: list[MessageAutomationRunSummary] = Field(default_factory=list)
+
+
+class MessageAutomationRunListResponse(BaseModel):
+    account: str
+    message_id: str
+    runs: list[MessageAutomationRunSummary]
 
 
 class LocalMailboxStats(BaseModel):

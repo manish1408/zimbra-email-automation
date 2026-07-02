@@ -114,6 +114,10 @@
 
   &:hover {
     background: #f8f9fb;
+
+    .automation-row-btn {
+      opacity: 1;
+    }
   }
 
   &.selected {
@@ -149,6 +153,38 @@
 
 .date {
   flex-shrink: 0;
+}
+
+.automation-row-btn {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.subject-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.category-badge {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+}
+
+.automation-summary {
+  background: #f8fafc;
+}
+
+.automation-header-btn {
+  white-space: nowrap;
 }
 
 .subject {

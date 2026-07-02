@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
+
 from app.config import Settings
+from app.db.email_repository import EmailRepository
 from app.models.schemas import (
     AccountMessages,
     Folder,
@@ -15,6 +18,8 @@ from app.models.schemas import (
 )
 from app.services.zimbra.admin_client import ZimbraAdminClient
 from app.services.zimbra.mail_client import ZimbraMailClient, ZimbraMessage
+
+logger = logging.getLogger(__name__)
 
 
 class EmailSyncService:
@@ -190,6 +195,8 @@ class EmailSyncService:
         self,
         user_email: str,
         query: str | None = None,
+        *,
+        persist: bool = True,
     ) -> AccountMessages:
         user = await self.get_user(user_email)
         token = await self.admin.delegate_auth(user_email)
@@ -198,11 +205,15 @@ class EmailSyncService:
             account_name=user_email,
             query=query,
         )
-        return AccountMessages(
+        summaries = [self._to_summary(message) for message in messages]
+        result = AccountMessages(
             user=user,
-            message_count=len(messages),
-            messages=[self._to_summary(message) for message in messages],
+            message_count=len(summaries),
+            messages=summaries,
         )
+        if persist and summaries:
+            await self._persist_messages(user_email, summaries)
+        return result
 
     async def _search_mailbox(
         self,
@@ -231,6 +242,48 @@ class EmailSyncService:
             "messages": [self._to_summary(message) for message in messages],
         }
         return response_class(**payload)
+
+    async def _persist_messages(
+        self, account: str, summaries: list[MessageSummary]
+    ) -> dict[str, int]:
+        repository = EmailRepository(self.settings.database_url)
+        conn = await repository.connect()
+        inserted = 0
+        updated = 0
+        newest_date: str | None = None
+        try:
+            for summary in summaries:
+                detail = MessageDetail(**summary.model_dump())
+                if self.settings.sync_fetch_bodies:
+                    try:
+                        full = await self.get_message(account, summary.id)
+                        detail.body = full.body
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to fetch body for %s/%s: %s",
+                            account,
+                            summary.id,
+                            exc,
+                        )
+                if await repository.upsert_message(conn, detail):
+                    inserted += 1
+                else:
+                    updated += 1
+                if summary.date and (not newest_date or summary.date > newest_date):
+                    newest_date = summary.date
+            await repository.upsert_mailbox_state(
+                conn,
+                account,
+                last_seen_date=newest_date,
+                last_poll_new_count=inserted,
+            )
+            if hasattr(conn, "commit"):
+                await conn.commit()
+        finally:
+            await conn.close()
+        stats = {"inserted": inserted, "updated": updated, "total": len(summaries)}
+        logger.info("Persisted %d messages for %s: %s", len(summaries), account, stats)
+        return stats
 
     @staticmethod
     def _to_user(account: dict[str, str | None]) -> User:

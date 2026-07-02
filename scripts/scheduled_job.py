@@ -47,6 +47,8 @@ async def run(args: argparse.Namespace) -> dict:
 
     if args.dry_run:
         settings.automation_dry_run = True
+    elif args.live:
+        settings.automation_dry_run = False
 
     pipeline = ScheduledPipeline(settings)
     return await pipeline.run(skip_analysis=args.sync_only)
@@ -69,6 +71,11 @@ def main() -> None:
         "--dry-run",
         action="store_true",
         help="Force AUTOMATION_DRY_RUN=true for this run",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Apply Zimbra folder moves and other actions (AUTOMATION_DRY_RUN=false)",
     )
     parser.add_argument(
         "--interval-hours",

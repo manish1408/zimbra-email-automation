@@ -7,6 +7,7 @@ import { catchError } from 'rxjs/operators';
 import {
   Folder,
   MailSource,
+  MessageAutomationResult,
   MessageDetail,
   MessageMetadata,
   MessageSummary,
@@ -16,6 +17,7 @@ import { LocalDataService } from '../../core/services/local-data.service';
 import { MailboxService } from '../../core/services/mailbox.service';
 import { SyncService } from '../../core/services/sync.service';
 import { UsersService } from '../../core/services/users.service';
+import { AutomationDrawerComponent } from './automation-drawer/automation-drawer';
 
 interface FolderFilter {
   label: string;
@@ -25,7 +27,7 @@ interface FolderFilter {
 @Component({
   selector: 'app-inbox',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, AutomationDrawerComponent],
   templateUrl: './inbox.html',
   styleUrl: './inbox.scss',
 })
@@ -50,6 +52,10 @@ export class InboxComponent implements OnInit {
   selectedMessage: MessageDetail | null = null;
   selectedMetadata: MessageMetadata | null = null;
   relatedMessages: MessageSummary[] = [];
+  metadataCache: Record<string, MessageMetadata> = {};
+
+  automationOpen = false;
+  automationMessage: MessageSummary | null = null;
 
   total = 0;
   limit = 50;
@@ -62,6 +68,7 @@ export class InboxComponent implements OnInit {
   loadingDetail = false;
   syncing = false;
   error = '';
+  syncMessage = '';
 
   readonly folderFilters: FolderFilter[] = [
     { label: 'All mail', query: 'is:anywhere' },
@@ -172,6 +179,7 @@ export class InboxComponent implements OnInit {
       this.total = res.total;
       this.hasMore = res.has_more;
       this.loadingMessages = false;
+      this.prefetchMetadata(res.messages);
       if (this.messages.length && !this.selectedMessage) {
         this.selectMessage(this.messages[0]);
       }
@@ -211,6 +219,9 @@ export class InboxComponent implements OnInit {
       next: ({ detail, metadata }) => {
         this.selectedMessage = detail;
         this.selectedMetadata = metadata;
+        if (metadata) {
+          this.metadataCache[message.id] = metadata;
+        }
         this.relatedMessages = this.findRelated(detail);
         this.loadingDetail = false;
       },
@@ -236,9 +247,12 @@ export class InboxComponent implements OnInit {
   syncUser(): void {
     if (!this.selectedEmail) return;
     this.syncing = true;
+    this.error = '';
+    this.syncMessage = '';
     this.syncService.syncUser(this.selectedEmail).subscribe({
-      next: () => {
+      next: (result) => {
         this.syncing = false;
+        this.syncMessage = `Synced ${result.message_count} messages to local database.`;
         if (this.source === 'cached') {
           this.loadMessages();
         }
@@ -321,11 +335,67 @@ export class InboxComponent implements OnInit {
     return body || fragment || '(no body)';
   }
 
+  openAutomationDrawer(message: MessageSummary, event: Event): void {
+    event.stopPropagation();
+    this.automationMessage = message;
+    this.automationOpen = true;
+  }
+
+  closeAutomationDrawer(): void {
+    this.automationOpen = false;
+    this.automationMessage = null;
+  }
+
+  onAutomationUpdated(result: MessageAutomationResult | null): void {
+    if (!result || !this.automationMessage) return;
+    const meta: MessageMetadata = {
+      zimbra_id: result.message_id,
+      account: result.account,
+      category: (result.classification?.['category'] as string) ?? null,
+      is_spam: Boolean(result.classification?.['is_spam']),
+      folder_path: (result.actions?.['folder_path'] as string) ?? null,
+      forwarded_to: (result.actions?.['forwarded_to'] as string) ?? null,
+      ack_sent_at: result.actions?.['ack_sent'] ? new Date().toISOString() : null,
+      draft_saved: Boolean(result.actions?.['draft_saved']),
+      classification: result.classification ?? null,
+      draft_reply_text: result.draft_reply_text ?? null,
+      ack_body_text: result.ack_body_text ?? null,
+      report: result.report ?? null,
+      error: result.error ?? null,
+      processed_at: result.processed_at ?? new Date().toISOString(),
+      analyzed_at: result.processed_at ?? new Date().toISOString(),
+    };
+    this.metadataCache[result.message_id] = meta;
+    if (this.selectedMessage?.id === result.message_id) {
+      this.selectedMetadata = meta;
+    }
+  }
+
+  rowMetadata(messageId: string): MessageMetadata | undefined {
+    return this.metadataCache[messageId];
+  }
+
+  private prefetchMetadata(messages: MessageSummary[]): void {
+    if (!this.selectedEmail) return;
+    for (const msg of messages) {
+      if (this.metadataCache[msg.id]) continue;
+      this.localDataService
+        .getMetadata(this.selectedEmail, msg.id)
+        .pipe(catchError(() => of(null)))
+        .subscribe((meta) => {
+          if (meta) {
+            this.metadataCache[msg.id] = meta;
+          }
+        });
+    }
+  }
+
   private resetList(): void {
     this.offset = 0;
     this.selectedMessage = null;
     this.selectedMetadata = null;
     this.relatedMessages = [];
+    this.metadataCache = {};
   }
 
   private findRelated(message: MessageDetail): MessageSummary[] {

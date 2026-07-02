@@ -13,6 +13,7 @@ from app.config import Settings
 from app.db.email_repository import EmailRepository
 from app.models.schemas import MessageDetail
 from app.services.email_sync import EmailSyncService
+from app.services.llm import llm_configured, llm_not_configured_message
 from app.services.routing import RoutingResolver
 
 logger = logging.getLogger(__name__)
@@ -74,16 +75,27 @@ class ScheduledPipeline:
                 result["analysis"] = {"skipped": True}
                 return result
 
-            if not self.settings.openai_api_key:
-                logger.warning("OPENAI_API_KEY not set; skipping AI analysis")
-                result["analysis"] = {"skipped": True, "reason": "OPENAI_API_KEY not configured"}
+            if not llm_configured(self.settings):
+                logger.warning("LLM not configured; skipping AI analysis")
+                result["analysis"] = {
+                    "skipped": True,
+                    "reason": llm_not_configured_message(self.settings),
+                }
                 return result
 
-            analysis_stats = await self._run_action_pipeline(conn, target)
+            analysis_stats = await self.run_action_pipeline(conn, target)
             result["analysis"] = analysis_stats
             return result
         finally:
             await conn.close()
+
+    async def run_action_pipeline(
+        self,
+        conn: asyncpg.Connection | Any,
+        account: str,
+    ) -> dict[str, Any]:
+        """Classify unanalyzed messages and move them to category folders on Zimbra."""
+        return await self._run_action_pipeline(conn, account)
 
     async def _poll_and_sync(
         self, conn: asyncpg.Connection, account: str
@@ -199,11 +211,13 @@ class ScheduledPipeline:
             "message_count": report.get("message_count", len(unanalyzed)),
             "classified": report.get("classified"),
             "spam": report.get("spam"),
+            "moved": report.get("moved"),
             "forwarded": report.get("forwarded"),
             "acked": report.get("acked"),
             "drafts": report.get("drafts"),
             "errors": report.get("errors"),
             "dry_run": report.get("dry_run"),
+            "move_to_folders": report.get("move_to_folders"),
             "summary": report,
         }
         logger.info("Action pipeline complete: %s", stats)

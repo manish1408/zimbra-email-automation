@@ -87,19 +87,11 @@ async def get_message_metadata(
         conn = await repository.connect()
         try:
             action = await repository.get_message_action(conn, user_email, message_id)
-            row = await conn.fetchrow(
-                "SELECT analyzed_at FROM messages WHERE account = $1 AND zimbra_id = $2",
-                user_email,
-                message_id,
-            )
+            analyzed_at = await repository.get_analyzed_at(conn, user_email, message_id)
         finally:
             await conn.close()
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
-
-    analyzed_at = None
-    if row and row["analyzed_at"]:
-        analyzed_at = row["analyzed_at"].isoformat()
 
     if not action and not analyzed_at:
         raise HTTPException(status_code=404, detail="No metadata found for this message")
@@ -115,6 +107,9 @@ async def get_message_metadata(
             ack_sent_at=action.get("ack_sent_at"),
             draft_saved=bool(action.get("draft_saved")),
             classification=action.get("classification"),
+            draft_reply_text=action.get("draft_reply_text"),
+            ack_body_text=action.get("ack_body_text"),
+            report=action.get("report"),
             error=action.get("error"),
             processed_at=action.get("processed_at"),
             analyzed_at=analyzed_at,

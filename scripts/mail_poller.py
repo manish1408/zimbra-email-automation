@@ -72,6 +72,11 @@ def main() -> None:
         default=None,
         help="Poll interval in seconds (default: SYNC_POLL_INTERVAL_SECONDS)",
     )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Apply Zimbra folder moves and other actions (AUTOMATION_DRY_RUN=false)",
+    )
     args = parser.parse_args()
 
     if not settings.sync_target_email and not args.account:
@@ -79,6 +84,9 @@ def main() -> None:
 
     if args.account:
         settings.sync_target_email = args.account
+
+    if args.live:
+        settings.automation_dry_run = False
 
     interval = args.interval or settings.sync_poll_interval_seconds
     pipeline = ScheduledPipeline(settings)

@@ -16,6 +16,7 @@ from app.models.schemas import (
     GraphNodeSchema,
     GraphSchemaResponse,
 )
+from app.services.llm import llm_configured, llm_not_configured_message
 
 router = APIRouter(prefix="/agent", tags=["Agent"])
 
@@ -107,8 +108,8 @@ async def get_schema() -> GraphSchemaResponse:
     description="Synchronously execute the email automation LangGraph for a mailbox.",
 )
 async def run_agent(request_body: AgentRunRequest, request: Request) -> AgentRunResult:
-    if not settings.openai_api_key:
-        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured")
+    if not llm_configured(settings):
+        raise HTTPException(status_code=503, detail=llm_not_configured_message(settings))
     graph = request.app.state.agent_graph
     thread_id = _thread_id(request_body)
     config = {"configurable": {"thread_id": thread_id}}
@@ -122,8 +123,8 @@ async def run_agent(request_body: AgentRunRequest, request: Request) -> AgentRun
     description="Server-Sent Events stream of node lifecycle and output updates.",
 )
 async def stream_agent(request_body: AgentRunRequest, request: Request) -> StreamingResponse:
-    if not settings.openai_api_key:
-        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured")
+    if not llm_configured(settings):
+        raise HTTPException(status_code=503, detail=llm_not_configured_message(settings))
     graph = request.app.state.agent_graph
     thread_id = _thread_id(request_body)
     config = {"configurable": {"thread_id": thread_id}}

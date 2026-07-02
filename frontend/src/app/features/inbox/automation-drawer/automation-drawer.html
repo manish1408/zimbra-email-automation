@@ -1,0 +1,222 @@
+@if (open) {
+  <div class="offcanvas-backdrop fade show automation-backdrop" (click)="onBackdropClick()"></div>
+}
+
+<div
+  class="offcanvas offcanvas-end automation-offcanvas"
+  [class.show]="open"
+  [class.visible]="open"
+  tabindex="-1"
+  aria-labelledby="automationDrawerLabel"
+>
+  <div class="offcanvas-header border-bottom">
+    <div class="header-copy">
+      <h5 class="offcanvas-title" id="automationDrawerLabel">Email automation</h5>
+      @if (message) {
+        <p class="message-subject mb-1">{{ message.subject || '(no subject)' }}</p>
+        <p class="message-meta mb-0">
+          <span>{{ message.from || '(unknown sender)' }}</span>
+          <span class="meta-sep">·</span>
+          <span>{{ formatDate(message.date) }}</span>
+        </p>
+        <p class="message-id mb-0">
+          <code>{{ message.id }}</code>
+        </p>
+      }
+    </div>
+    <button type="button" class="btn-close" aria-label="Close" (click)="close()"></button>
+  </div>
+
+  <div class="offcanvas-body p-0 d-flex flex-column">
+    <div class="drawer-toolbar border-bottom px-3 py-3">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          [disabled]="running || !message"
+          (click)="runAutomation()"
+        >
+          @if (running) {
+            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+            Running…
+          } @else {
+            Run automation
+          }
+        </button>
+        <div class="form-check form-switch mb-0 ms-1">
+          <input
+            class="form-check-input"
+            type="checkbox"
+            id="forceRerun"
+            [(ngModel)]="forceRerun"
+          />
+          <label class="form-check-label small" for="forceRerun">Re-run even if processed</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="drawer-content flex-grow-1 overflow-auto px-3 py-3">
+      @if (loadError) {
+        <div class="alert alert-danger py-2 small mb-3">{{ loadError }}</div>
+      }
+
+      @if (loading) {
+        <div class="text-center py-5">
+          <div class="spinner-border text-primary" role="status"></div>
+          <p class="text-muted small mt-2 mb-0">Loading automation results…</p>
+        </div>
+      } @else if (result) {
+        @if (result.dry_run) {
+          <div class="alert alert-warning py-2 small mb-3 mb-0">
+            Dry run — no Zimbra changes were applied
+          </div>
+        }
+
+        @if (result.error) {
+          <div class="alert alert-danger py-2 small mb-3">{{ result.error }}</div>
+        }
+
+        <div class="result-card card mb-3">
+          <div class="card-header py-2">Classification</div>
+          <div class="card-body py-3">
+            @if (result.classification) {
+              <div class="d-flex flex-wrap gap-2 mb-2">
+                @if (result.classification['category']) {
+                  <span class="badge" [ngClass]="categoryClass($any(result.classification['category']))">
+                    {{ result.classification['category'] }}
+                  </span>
+                }
+                <span
+                  class="badge"
+                  [class.text-bg-danger]="result.classification['is_spam']"
+                  [class.text-bg-secondary]="!result.classification['is_spam']"
+                >
+                  {{ result.classification['is_spam'] ? 'Spam' : 'Not spam' }}
+                </span>
+                <span class="badge text-bg-light border text-dark">
+                  {{ confidencePercent(result.classification['confidence']) }} confidence
+                </span>
+              </div>
+              @if (result.classification['reasoning']) {
+                <p class="small text-muted mb-0">{{ result.classification['reasoning'] }}</p>
+              }
+            } @else {
+              <p class="small text-muted mb-0">No classification recorded.</p>
+            }
+          </div>
+        </div>
+
+        <div class="result-card card mb-3">
+          <div class="card-header py-2">Routing</div>
+          <div class="card-body py-3">
+            <dl class="routing-dl small mb-0">
+              <dt>Forwarded to</dt>
+              <dd>{{ result.actions?.['forwarded_to'] || result.classification?.['route_target'] || '—' }}</dd>
+              <dt>Target folder</dt>
+              <dd>{{ result.actions?.['folder_path'] || '—' }}</dd>
+              <dt>Needs live agent</dt>
+              <dd>{{ result.classification?.['needs_live_agent'] ? 'Yes' : 'No' }}</dd>
+              <dt>Requested person</dt>
+              <dd>{{ result.classification?.['requested_person'] || '—' }}</dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="result-card card mb-3">
+          <div class="card-header py-2">Actions taken</div>
+          <div class="card-body py-3">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              @if (result.actions?.['folder_moved']) {
+                <span class="badge text-bg-primary">Moved to folder</span>
+              } @else if (result.actions?.['folder_path'] && !result.dry_run) {
+                <span class="badge text-bg-light border text-dark">Already in folder</span>
+              }
+              @if (result.actions?.['ack_sent']) {
+                <span class="badge text-bg-success">Ack sent</span>
+              }
+              @if (result.actions?.['draft_saved']) {
+                <span class="badge text-bg-secondary">Draft saved</span>
+              }
+              <span class="badge text-bg-light border text-dark text-capitalize">{{ result.status }}</span>
+              @if (result.processed_at) {
+                <span class="small text-muted ms-auto">{{ formatDate(result.processed_at) }}</span>
+              }
+            </div>
+          </div>
+        </div>
+
+        @if (result.draft_reply_text) {
+          <div class="result-card card mb-3">
+            <div class="card-header py-2">Generated draft</div>
+            <div class="card-body py-3">
+              <pre class="draft-block mb-0">{{ result.draft_reply_text }}</pre>
+            </div>
+          </div>
+        }
+
+        @if (result.ack_body_text) {
+          <div class="result-card card mb-3">
+            <div class="card-header py-2">Acknowledgement</div>
+            <div class="card-body py-3">
+              <pre class="draft-block mb-0">{{ result.ack_body_text }}</pre>
+            </div>
+          </div>
+        }
+
+        <div class="accordion accordion-flush history-accordion" id="automationHistory">
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button
+                class="accordion-button"
+                [class.collapsed]="!showHistory"
+                type="button"
+                (click)="showHistory = !showHistory"
+              >
+                Run history
+                @if (result.runs?.length) {
+                  <span class="badge text-bg-secondary ms-2">{{ result.runs?.length }}</span>
+                }
+              </button>
+            </h2>
+            <div class="accordion-collapse collapse" [class.show]="showHistory">
+              <div class="accordion-body p-0">
+                @if (result.runs?.length) {
+                  <ul class="list-group list-group-flush">
+                    @for (run of result.runs; track run.id) {
+                      <li class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                          <span class="badge text-capitalize" [ngClass]="statusClass(run.status)">
+                            {{ run.status }}
+                          </span>
+                          <span class="small text-muted text-end">{{ formatDate(run.created_at) }}</span>
+                        </div>
+                        @if (run.error) {
+                          <div class="small text-danger mt-1">{{ run.error }}</div>
+                        }
+                      </li>
+                    }
+                  </ul>
+                } @else {
+                  <p class="small text-muted px-3 py-2 mb-0">No previous runs.</p>
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      } @else if (!loading && !running) {
+        <div class="empty-results text-center py-5 px-2">
+          <div class="empty-icon mb-3" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M6 12.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5M3 8.062C3 6.76 4.235 5.765 5.53 5.886a26.6 26.6 0 0 0 4.94 0C11.765 5.765 13 6.76 13 8.062V11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>
+              <path d="M8 1a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v2.5a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5V6a2 2 0 0 1 2-2h1V3a2 2 0 0 1 2-2"/>
+            </svg>
+          </div>
+          <p class="mb-1 fw-semibold">No automation yet</p>
+          <p class="text-muted small mb-0">
+            Run automation to classify this email, route it, and generate acknowledgement or draft replies.
+          </p>
+        </div>
+      }
+    </div>
+  </div>
+</div>

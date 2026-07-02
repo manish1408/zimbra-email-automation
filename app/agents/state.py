@@ -39,9 +39,12 @@ class MessageActionRecord(TypedDict, total=False):
     category: str
     is_spam: bool
     folder_path: str | None
+    folder_moved: bool
     forwarded_to: str | None
     ack_sent: bool
     draft_saved: bool
+    draft_reply_text: str | None
+    ack_body_text: str | None
     error: str | None
 
 
@@ -50,6 +53,9 @@ class AgentState(TypedDict, total=False):
     limit: int
     instruction: str | None
     use_local_db: bool
+    message_ids: list[str] | None
+    force_reprocess: bool
+    automation_thread_id: str | None
     messages: list[dict[str, Any]]
     enriched_messages: list[dict[str, Any]]
     classifications: list[MessageClassification]

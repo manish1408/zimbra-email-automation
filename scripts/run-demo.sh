@@ -25,7 +25,7 @@ if [[ ! -x "$UVICORN" ]]; then
 fi
 
 if [[ ! -f "$ROOT_DIR/.env" ]]; then
-  echo "Missing .env file. Copy .env.example and configure Zimbra + OPENAI_API_KEY."
+  echo "Missing .env file. Copy .env.example and configure Zimbra + LLM (VastAI or OpenAI)."
   exit 1
 fi
 

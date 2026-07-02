@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from app.agents.state import AgentState, EmailCategory, MessageClassification
@@ -11,6 +10,7 @@ from app.config import Settings
 from app.db.email_repository import EmailRepository
 from app.services.action_executor import ActionExecutor
 from app.services.email_sync import EmailSyncService
+from app.services.llm import create_chat_llm, llm_configured
 from app.services.routing import RoutingResolver
 
 
@@ -41,18 +41,14 @@ class ActionNodeContext:
         self.settings = settings
         self.email_repository = email_repository
         self.resolver = resolver or RoutingResolver(settings, email_service)
-        self._llm: ChatOpenAI | None = None
+        self._llm = None
 
     @property
-    def llm(self) -> ChatOpenAI:
+    def llm(self):
         if self._llm is None:
-            if not self.settings.openai_api_key:
-                raise ValueError("OPENAI_API_KEY is not configured")
-            self._llm = ChatOpenAI(
-                model=self.settings.openai_model,
-                api_key=self.settings.openai_api_key,
-                temperature=0.1,
-            )
+            if not llm_configured(self.settings):
+                raise ValueError("LLM is not configured")
+            self._llm = create_chat_llm(self.settings, temperature=0.1)
         return self._llm
 
     @property
@@ -82,9 +78,42 @@ def _message_lines(messages: list[dict[str, Any]], include_body: bool = False) -
 
 
 def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
+    async def _load_message(user_email: str, message_id: str) -> dict[str, Any] | None:
+        if ctx.email_repository:
+            conn = await ctx.email_repository.connect()
+            try:
+                detail = await ctx.email_repository.get_message(
+                    conn, user_email, message_id
+                )
+                if detail:
+                    return EmailRepository.to_summary_dict(detail)
+            finally:
+                await conn.close()
+        try:
+            detail = await ctx.email_service.get_message(
+                user_email=user_email,
+                message_id=message_id,
+            )
+            return detail.model_dump(by_alias=True)
+        except Exception:
+            return None
+
     async def ingest_mailbox(state: AgentState) -> dict:
         user_email = state["user_email"]
         limit = state.get("limit") or ctx.settings.agent_inbox_limit
+        message_ids = state.get("message_ids")
+
+        if message_ids:
+            messages: list[dict[str, Any]] = []
+            for message_id in message_ids:
+                loaded = await _load_message(user_email, str(message_id))
+                if loaded:
+                    messages.append(loaded)
+            return {
+                "messages": messages,
+                "limit": len(messages) or limit,
+                "current_node": "ingest_mailbox",
+            }
 
         if state.get("use_local_db") and ctx.email_repository:
             conn = await ctx.email_repository.connect()
@@ -219,10 +248,18 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
         conn = await ctx.email_repository.connect()
         try:
             actions, errors = await ctx.executor.apply_all(
-                conn, account, messages, classifications
+                conn,
+                account,
+                messages,
+                classifications,
+                force_reprocess=bool(state.get("force_reprocess")),
+                automation_thread_id=state.get("automation_thread_id"),
+                report=state.get("report"),
             )
             zimbra_ids = [c["message_id"] for c in classifications]
             await ctx.email_repository.mark_analyzed(conn, account, zimbra_ids)
+            if hasattr(conn, "commit"):
+                await conn.commit()
         finally:
             await conn.close()
 
@@ -237,6 +274,7 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
         actions = state.get("actions_taken") or []
         spam_count = sum(1 for c in classifications if c.get("is_spam"))
         forwarded = sum(1 for a in actions if a.get("forwarded_to"))
+        moved = sum(1 for a in actions if a.get("folder_moved"))
         acked = sum(1 for a in actions if a.get("ack_sent"))
         drafts = sum(1 for a in actions if a.get("draft_saved"))
         errors = state.get("action_errors") or []
@@ -246,6 +284,7 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             "message_count": len(state.get("messages") or []),
             "classified": len(classifications),
             "spam": spam_count,
+            "moved": moved,
             "forwarded": forwarded,
             "acked": acked,
             "drafts": drafts,
@@ -253,6 +292,7 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             "classifications": classifications,
             "actions": actions,
             "dry_run": ctx.settings.automation_dry_run,
+            "move_to_folders": ctx.settings.automation_move_to_folders,
         }
         return {"report": report, "current_node": "format_run_report"}
 
