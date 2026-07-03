@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
-
-# Legacy demo graph intents
-IntentCategory = Literal["urgent", "compliance", "sales", "support", "newsletter", "general"]
 
 EmailCategory = Literal[
     "spam",
@@ -56,14 +52,14 @@ class ThreadSummaryRecord(TypedDict, total=False):
     focus: str
 
 
-class AgentState(TypedDict, total=False):
+class PipelineState(TypedDict, total=False):
     user_email: str
     limit: int
-    instruction: str | None
     use_local_db: bool
     message_ids: list[str] | None
     force_reprocess: bool
     automation_thread_id: str | None
+    agent_training: str | None
     messages: list[dict[str, Any]]
     enriched_messages: list[dict[str, Any]]
     classifications: list[MessageClassification]
@@ -73,17 +69,3 @@ class AgentState(TypedDict, total=False):
     action_errors: list[str]
     report: dict[str, Any]
     current_node: str
-
-    # Legacy demo graph fields
-    dominant_intent: IntentCategory
-    agent_messages: Annotated[list, add_messages]
-    pending_tool_calls: list[dict[str, Any]]
-    needs_tools: bool
-    branch_output: str
-    compliance_flags: list[str]
-    sales_insights: str
-    draft_reply: str
-    archive_suggestion: str
-    merged_insights: str
-    needs_refinement: bool
-    executive_report: str

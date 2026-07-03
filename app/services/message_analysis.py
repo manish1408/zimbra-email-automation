@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.state import EmailCategory, MessageClassification
 from app.config import Settings
+from app.services.agent_training import augment_system_prompt
 from app.services.email_thread import build_thread_context
 from app.services.llm import create_chat_llm, llm_configured, ainvoke_structured
 
@@ -91,6 +92,7 @@ class MessageAnalysisService:
         messages: list[dict[str, Any]],
         related_by_id: dict[str, list[dict[str, Any]]] | None = None,
         cached_summaries: dict[str, dict[str, Any]] | None = None,
+        agent_training: str | None = None,
     ) -> tuple[list[MessageClassification], list[dict[str, Any]], dict[str, str]]:
         if not messages:
             return [], [], {}
@@ -127,18 +129,21 @@ class MessageAnalysisService:
             f"Emails:\n\n" + "\n\n".join(blocks)
         )
 
+        system_prompt = augment_system_prompt(
+            (
+                "You are an email analyst for GK Hair. "
+                "Never route fake invoices or promotional spam as billing or logistics. "
+                "Extract requested_person for person_request emails. "
+                "Return one analysis object per message id."
+            ),
+            agent_training,
+        )
+
         result: MessageAnalysisBatch = await ainvoke_structured(
             self.llm,
             MessageAnalysisBatch,
             [
-                SystemMessage(
-                    content=(
-                        "You are an email analyst for GK Hair. "
-                        "Never route fake invoices or promotional spam as billing or logistics. "
-                        "Extract requested_person for person_request emails. "
-                        "Return one analysis object per message id."
-                    )
-                ),
+                SystemMessage(content=system_prompt),
                 HumanMessage(content=prompt),
             ],
         )

@@ -25,5 +25,5 @@ Output: `dist/frontend/`. Serve static files and ensure `/api` routes to the Fas
 |---|---|
 | `/inbox` | User picker — choose a mailbox |
 | `/inbox/:userEmail` | 3-pane inbox for that user |
-| `/agent` | Run AI agent analysis |
+| `/agent` | Agent training (global instructions for automation) |
 | `/settings` | Connection test, bulk sync, DB stats |

@@ -567,3 +567,42 @@ class PostgresEmailRepository:
     @staticmethod
     def to_summary_dict(message: MessageDetail | MessageSummary) -> dict[str, Any]:
         return message.model_dump(by_alias=True)
+
+    async def get_agent_training(self) -> dict[str, Any]:
+        conn = await self.connect()
+        try:
+            row = await conn.fetchrow(
+                "SELECT content, updated_at FROM agent_training WHERE id = 1"
+            )
+            if not row:
+                return {"content": "", "updated_at": None}
+            updated_at = row["updated_at"]
+            return {
+                "content": row["content"] or "",
+                "updated_at": updated_at.isoformat() if updated_at else None,
+            }
+        finally:
+            await conn.close()
+
+    async def upsert_agent_training(self, content: str) -> dict[str, Any]:
+        now = _utc_now()
+        conn = await self.connect()
+        try:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO agent_training (id, content, updated_at)
+                VALUES (1, $1, $2)
+                ON CONFLICT (id) DO UPDATE
+                SET content = EXCLUDED.content, updated_at = EXCLUDED.updated_at
+                RETURNING content, updated_at
+                """,
+                content,
+                now,
+            )
+            updated_at = row["updated_at"]
+            return {
+                "content": row["content"] or "",
+                "updated_at": updated_at.isoformat() if updated_at else None,
+            }
+        finally:
+            await conn.close()

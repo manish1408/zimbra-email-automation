@@ -8,6 +8,5 @@ export const routes: Routes = [
   { path: 'inbox', component: InboxComponent },
   { path: 'inbox/:userEmail', component: InboxComponent },
   { path: 'agent', component: AgentComponent },
-  { path: 'agent/:userEmail', component: AgentComponent },
   { path: 'settings', component: SettingsComponent },
 ];

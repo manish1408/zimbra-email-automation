@@ -78,24 +78,9 @@ export interface SyncResult {
   accounts: AccountMessages[];
 }
 
-export interface AgentRunRequest {
-  user_email: string;
-  limit?: number;
-  instruction?: string;
-  session_id?: string;
-}
-
-export interface AgentRunResult {
-  thread_id: string;
-  user_email: string;
-  dominant_intent?: string | null;
-  dominant_category?: string | null;
-  message_count: number;
-  classifications: Record<string, unknown>[];
-  compliance_flags: string[];
-  summary?: string | null;
-  draft_reply?: string | null;
-  report: Record<string, unknown>;
+export interface AgentTraining {
+  content: string;
+  updated_at: string | null;
 }
 
 export interface MessageMetadata {

@@ -4,7 +4,7 @@ import logging
 import uuid
 from typing import Any
 
-from app.agents.action_graph import build_action_graph
+from app.services.action_pipeline import run_action_pipeline
 from app.config import Settings
 from app.db.email_repository import EmailRepository
 from app.models.schemas import (
@@ -13,6 +13,7 @@ from app.models.schemas import (
     ThreadSummaryResponse,
 )
 from app.services.email_sync import EmailSyncService
+from app.services.agent_training import load_training
 from app.services.llm import llm_configured, llm_not_configured_message
 from app.services.routing import RoutingResolver
 from app.services.scheduled_pipeline import ScheduledPipeline
@@ -170,13 +171,6 @@ class MessageAutomationService:
                 await conn.close()
 
         thread_id = f"manual:{account}:{message_id}:{uuid.uuid4().hex[:8]}"
-        graph = build_action_graph(
-            email_service=self.email_service,
-            settings=self.settings,
-            checkpointer=None,
-            email_repository=self.repository,
-            resolver=self.resolver,
-        )
         initial_state = {
             "user_email": account,
             "limit": 1,
@@ -186,7 +180,13 @@ class MessageAutomationService:
             "automation_thread_id": thread_id,
         }
         try:
-            result = await graph.ainvoke(initial_state)
+            result = await run_action_pipeline(
+                initial_state,
+                email_service=self.email_service,
+                settings=self.settings,
+                email_repository=self.repository,
+                resolver=self.resolver,
+            )
         except Exception as exc:
             logger.exception("Automation pipeline failed for %s", message_id)
             await self._persist_run(
@@ -302,7 +302,10 @@ class MessageAutomationService:
         except Exception:
             related = []
 
-        summary = await ThreadSummaryService(self.settings).summarize(message, related)
+        training = await load_training(self.repository)
+        summary = await ThreadSummaryService(self.settings).summarize(
+            message, related, agent_training=training
+        )
 
         conn = await self.repository.connect()
         try:

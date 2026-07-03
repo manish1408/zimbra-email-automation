@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Scheduled sync + AI analysis job for cron.
 
-Syncs the mailbox configured in SYNC_TARGET_EMAIL to a local SQLite database,
-then runs the LangGraph agent on unanalyzed messages.
+Syncs the mailbox configured in SYNC_TARGET_EMAIL to the local database,
+then runs the automation pipeline on unanalyzed messages.
 
 Cron example (every 6 hours — adjust SYNC_INTERVAL_HOURS in .env to match):
 

@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from app.config import Settings
+from app.services.agent_training import augment_system_prompt
 from app.services.email_thread import build_thread_context
 from app.services.llm import create_chat_llm, llm_configured, ainvoke_structured
 
@@ -44,6 +45,7 @@ class ThreadSummaryService:
         self,
         message: dict[str, Any],
         related_messages: list[dict[str, Any]] | None = None,
+        agent_training: str | None = None,
     ) -> dict[str, Any]:
         context = build_thread_context(message, related_messages)
         current_text = context["current_text"]
@@ -64,20 +66,23 @@ class ThreadSummaryService:
             f"{history_text or '(none — this appears to be the first message in the thread)'}"
         )
 
+        system_prompt = augment_system_prompt(
+            (
+                "You summarize email threads for support agents at GK Hair. "
+                "Personal details are already redacted as [EMAIL], [PHONE], [LINK], [REDACTED]. "
+                "Never invent facts. Keep each bullet under 15 words. "
+                "history_points should cover prior messages only. "
+                "current_points should cover the latest email only. "
+                "focus is one actionable sentence about the current email."
+            ),
+            agent_training,
+        )
+
         result: ThreadSummaryOutput = await ainvoke_structured(
             self.llm,
             ThreadSummaryOutput,
             [
-                SystemMessage(
-                    content=(
-                        "You summarize email threads for support agents at GK Hair. "
-                        "Personal details are already redacted as [EMAIL], [PHONE], [LINK], [REDACTED]. "
-                        "Never invent facts. Keep each bullet under 15 words. "
-                        "history_points should cover prior messages only. "
-                        "current_points should cover the latest email only. "
-                        "focus is one actionable sentence about the current email."
-                    )
-                ),
+                SystemMessage(content=system_prompt),
                 HumanMessage(content=prompt),
             ],
         )

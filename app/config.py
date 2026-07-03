@@ -36,12 +36,11 @@ class Settings(BaseSettings):
     vastai_timeout_seconds: float = 300.0
 
     agent_inbox_limit: int = 10
-    agent_checkpoint_path: str = "data/agent_checkpoints.db"
 
     # Scheduled sync + AI analysis
     sync_target_email: str | None = None
     sync_interval_hours: float = 6.0
-    database_url: str = "sqlite:///data/emails.db"
+    database_url: str = "postgresql://zimbra:zimbra_dev@localhost:5432/zimbra_automation"
     sync_fetch_bodies: bool = True
     sync_poll_interval_seconds: int = 60
     sync_inbox_query: str = "in:inbox"

@@ -120,47 +120,13 @@ class SyncResult(BaseModel):
     accounts: list[AccountMessages]
 
 
-class GraphNodeSchema(BaseModel):
-    name: str
+class AgentTrainingResponse(BaseModel):
+    content: str = ""
+    updated_at: str | None = None
 
 
-class GraphEdgeSchema(BaseModel):
-    from_node: str = Field(alias="from")
-    to: str | None = None
-    condition: str | None = None
-    paths: list[str] | None = None
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class GraphSchemaResponse(BaseModel):
-    name: str
-    entrypoint: str
-    nodes: list[GraphNodeSchema]
-    edges: list[GraphEdgeSchema]
-
-
-class AgentRunRequest(BaseModel):
-    user_email: str = Field(description="Mailbox to analyze")
-    limit: int | None = Field(default=None, ge=1, le=50)
-    instruction: str | None = Field(default=None, description="Optional focus for triage")
-    session_id: str | None = Field(default=None, description="Demo session identifier")
-
-
-class AgentRunResult(BaseModel):
-    thread_id: str
-    user_email: str
-    dominant_intent: str | None = None
-    dominant_category: str | None = None
-    message_count: int = 0
-    classifications: list[dict] = Field(default_factory=list)
-    compliance_flags: list[str] = Field(default_factory=list)
-    sales_insights: str | None = None
-    summary: str | None = None
-    executive_report: str | None = None
-    draft_reply: str | None = None
-    archive_suggestion: str | None = None
-    report: dict = Field(default_factory=dict)
+class AgentTrainingUpdateRequest(BaseModel):
+    content: str = Field(default="", max_length=8000)
 
 
 class MessageMetadata(BaseModel):

@@ -1,10 +1,10 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
-import { AgentRunResult } from '../../core/models/email.models';
+import { AgentTraining } from '../../core/models/email.models';
 import { AgentService } from '../../core/services/agent.service';
-import { UsersService } from '../../core/services/users.service';
+
+const MAX_TRAINING_LENGTH = 8000;
 
 @Component({
   selector: 'app-agent',
@@ -12,43 +12,44 @@ import { UsersService } from '../../core/services/users.service';
   imports: [CommonModule, FormsModule],
   template: `
     <div class="container py-4">
-      <h1 class="h3 mb-4">Agent Analysis</h1>
+      <h1 class="h3 mb-2">Agent Training</h1>
+      <p class="text-muted mb-4">
+        Global instructions for all mailboxes — affects classification, thread summaries, and draft replies.
+      </p>
+
       <div class="card shadow-sm">
         <div class="card-body">
-          <div class="mb-3">
-            <label class="form-label">Mailbox</label>
-            <select class="form-select" [(ngModel)]="userEmail">
-              <option value="">Select user…</option>
-              @for (u of users; track u.email) {
-                <option [value]="u.email">{{ u.email }}</option>
-              }
-            </select>
+          <label class="form-label" for="trainingContent">Training text</label>
+          <textarea
+            id="trainingContent"
+            class="form-control font-monospace"
+            rows="14"
+            style="min-height: 320px"
+            [(ngModel)]="content"
+            [disabled]="loading || saving"
+            placeholder="Example: Always treat emails from vendor@example.com as logistics. Use a formal tone for billing inquiries."
+          ></textarea>
+          <div class="d-flex flex-wrap align-items-center gap-3 mt-3">
+            <button
+              class="btn btn-primary"
+              [disabled]="loading || saving || !dirty"
+              (click)="save()"
+            >
+              {{ saving ? 'Saving…' : 'Save Training' }}
+            </button>
+            <span class="small text-muted">{{ content.length }} / {{ maxLength }}</span>
+            @if (updatedAt) {
+              <span class="small text-muted">Last saved {{ updatedAt | date: 'medium' }}</span>
+            }
           </div>
-          <div class="mb-3">
-            <label class="form-label">Instruction (optional)</label>
-            <textarea class="form-control" rows="3" [(ngModel)]="instruction"></textarea>
-          </div>
-          <button class="btn btn-primary" [disabled]="!userEmail || running" (click)="run()">
-            {{ running ? 'Running…' : 'Run Agent' }}
-          </button>
-          @if (error) {
-            <div class="alert alert-danger mt-3">{{ error }}</div>
+          @if (loading) {
+            <div class="mt-3 text-muted small">Loading training…</div>
           }
-          @if (result) {
-            <div class="mt-4">
-              <h2 class="h5">Result</h2>
-              <p><strong>Thread:</strong> {{ result.thread_id }}</p>
-              <p><strong>Messages:</strong> {{ result.message_count }}</p>
-              @if (result.summary) {
-                <p>{{ result.summary }}</p>
-              }
-              @if (result.draft_reply) {
-                <h3 class="h6">Draft Reply</h3>
-                <pre class="bg-light p-3 rounded">{{ result.draft_reply }}</pre>
-              }
-              <h3 class="h6 mt-3">Classifications</h3>
-              <pre class="bg-light p-3 rounded small">{{ result.classifications | json }}</pre>
-            </div>
+          @if (error) {
+            <div class="alert alert-danger mt-3 mb-0">{{ error }}</div>
+          }
+          @if (successMessage) {
+            <div class="alert alert-success mt-3 mb-0">{{ successMessage }}</div>
           }
         </div>
       </div>
@@ -56,43 +57,64 @@ import { UsersService } from '../../core/services/users.service';
   `,
 })
 export class AgentComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-  private readonly usersService = inject(UsersService);
   private readonly agentService = inject(AgentService);
 
-  users: { email: string }[] = [];
-  userEmail = '';
-  instruction = '';
-  running = false;
+  readonly maxLength = MAX_TRAINING_LENGTH;
+
+  content = '';
+  savedContent = '';
+  updatedAt: string | null = null;
+  loading = false;
+  saving = false;
   error = '';
-  result: AgentRunResult | null = null;
+  successMessage = '';
+
+  get dirty(): boolean {
+    return this.content !== this.savedContent;
+  }
 
   ngOnInit(): void {
-    this.usersService.listUsers().subscribe((res) => (this.users = res.users));
-    this.route.paramMap.subscribe((params) => {
-      const email = params.get('userEmail');
-      if (email) this.userEmail = decodeURIComponent(email);
+    this.load();
+  }
+
+  load(): void {
+    this.loading = true;
+    this.error = '';
+    this.agentService.getTraining().subscribe({
+      next: (res) => this.applyTraining(res),
+      error: (err) => {
+        this.error = err?.error?.detail ?? 'Failed to load training';
+        this.loading = false;
+      },
     });
   }
 
-  run(): void {
-    this.running = true;
+  save(): void {
+    if (this.content.length > this.maxLength) {
+      this.error = `Training text must be at most ${this.maxLength} characters.`;
+      return;
+    }
+
+    this.saving = true;
     this.error = '';
-    this.result = null;
-    this.agentService
-      .run({
-        user_email: this.userEmail,
-        instruction: this.instruction || undefined,
-      })
-      .subscribe({
-        next: (res) => {
-          this.result = res;
-          this.running = false;
-        },
-        error: (err) => {
-          this.error = err?.error?.detail ?? 'Agent run failed';
-          this.running = false;
-        },
-      });
+    this.successMessage = '';
+    this.agentService.saveTraining(this.content).subscribe({
+      next: (res) => {
+        this.applyTraining(res);
+        this.saving = false;
+        this.successMessage = 'Training saved.';
+      },
+      error: (err) => {
+        this.error = err?.error?.detail ?? 'Failed to save training';
+        this.saving = false;
+      },
+    });
+  }
+
+  private applyTraining(res: AgentTraining): void {
+    this.content = res.content ?? '';
+    this.savedContent = this.content;
+    this.updatedAt = res.updated_at;
+    this.loading = false;
   }
 }

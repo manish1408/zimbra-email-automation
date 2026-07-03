@@ -7,7 +7,7 @@ from typing import Any
 
 import asyncpg
 
-from app.agents.action_graph import build_action_graph
+from app.services.action_pipeline import run_action_pipeline
 from app.config import Settings
 from app.db.email_repository import EmailRepository
 from app.models.schemas import MessageDetail
@@ -235,19 +235,18 @@ class ScheduledPipeline:
         logger.info("Running action pipeline on %d messages for %s", len(unanalyzed), account)
 
         thread_id = f"scheduled:{account}:{uuid.uuid4().hex[:8]}"
-        graph = build_action_graph(
-            email_service=self.email_service,
-            settings=self.settings,
-            checkpointer=None,
-            email_repository=self.repository,
-            resolver=self.resolver,
-        )
         initial_state = {
             "user_email": account,
             "limit": limit,
             "use_local_db": True,
         }
-        result = await graph.ainvoke(initial_state)
+        result = await run_action_pipeline(
+            initial_state,
+            email_service=self.email_service,
+            settings=self.settings,
+            email_repository=self.repository,
+            resolver=self.resolver,
+        )
 
         report = result.get("report") or {}
         run_id = await self.repository.save_analysis_run(

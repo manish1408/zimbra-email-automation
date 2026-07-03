@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agents.state import AgentState
+from app.agents.state import PipelineState
 from app.config import Settings
 from app.db.email_repository import EmailRepository
 from app.services.action_executor import ActionExecutor
@@ -77,7 +77,7 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             await conn.close()
         return cached
 
-    async def ingest_mailbox(state: AgentState) -> dict:
+    async def ingest_mailbox(state: PipelineState) -> dict:
         user_email = state["user_email"]
         limit = state.get("limit") or ctx.settings.agent_inbox_limit
         message_ids = state.get("message_ids")
@@ -111,7 +111,7 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
 
         return {"messages": messages, "limit": limit, "current_node": "ingest_mailbox"}
 
-    async def enrich_messages(state: AgentState) -> dict:
+    async def enrich_messages(state: PipelineState) -> dict:
         user_email = state["user_email"]
         messages = list(state.get("messages") or [])
         enriched: list[dict[str, Any]] = []
@@ -145,7 +145,7 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
 
         return {"enriched_messages": enriched, "current_node": "enrich_messages"}
 
-    async def analyze_messages(state: AgentState) -> dict:
+    async def analyze_messages(state: PipelineState) -> dict:
         user_email = state["user_email"]
         messages = state.get("enriched_messages") or state.get("messages") or []
         if not messages or not llm_configured(ctx.settings):
@@ -185,6 +185,7 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 messages,
                 related_by_id=related_by_id,
                 cached_summaries=cached_summaries,
+                agent_training=state.get("agent_training"),
             )
         except Exception as exc:
             classifications = []
@@ -208,13 +209,13 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             "current_node": "analyze_messages",
         }
 
-    async def resolve_routes(state: AgentState) -> dict:
+    async def resolve_routes(state: PipelineState) -> dict:
         account = state["user_email"]
         classifications = state.get("classifications") or []
         resolved = await ctx.resolver.resolve_routes_async(classifications, account)
         return {"classifications": resolved, "current_node": "resolve_routes"}
 
-    async def apply_actions(state: AgentState) -> dict:
+    async def apply_actions(state: PipelineState) -> dict:
         account = state["user_email"]
         messages = state.get("enriched_messages") or state.get("messages") or []
         classifications = state.get("classifications") or []
@@ -256,7 +257,7 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             "current_node": "apply_actions",
         }
 
-    async def format_run_report(state: AgentState) -> dict:
+    async def format_run_report(state: PipelineState) -> dict:
         classifications = state.get("classifications") or []
         actions = state.get("actions_taken") or []
         spam_count = sum(1 for c in classifications if c.get("is_spam"))

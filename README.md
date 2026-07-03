@@ -77,8 +77,10 @@ All routes are under `/api/v1` and documented at `/docs`.
 | `GET` | `/api/v1/local/users/{email}/messages/{id}` | Cached message detail |
 | `GET` | `/api/v1/local/users/{email}/messages/{id}/metadata` | Automation metadata |
 | `GET` | `/api/v1/local/users/{email}/stats` | Local sync statistics |
-| `GET` | `/api/v1/local/users/{email}/analysis-runs` | Agent run history |
-| `POST` | `/api/v1/agent/run` | Run AI agent on inbox |
+| `GET` | `/api/v1/local/users/{email}/analysis-runs` | Automation run history |
+| `POST` | `/api/v1/automation/users/{email}/messages/{id}/run` | Run automation on one message |
+| `GET` | `/api/v1/agent/training` | Get global agent training text |
+| `PUT` | `/api/v1/agent/training` | Save global agent training text |
 
 Encode `@` as `%40` in email paths (e.g. `mayank.gautam%40mail.gkhair.com`).
 
