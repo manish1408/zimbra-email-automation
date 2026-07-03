@@ -163,8 +163,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
+  opacity: 0.35;
   transition: opacity 0.15s ease;
+
+  &.btn-success,
+  &.btn-outline-danger {
+    opacity: 1;
+  }
 }
 
 .subject-line {
@@ -175,6 +180,11 @@
 }
 
 .category-badge {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+}
+
+.automation-badge {
   flex-shrink: 0;
   font-size: 0.65rem;
 }

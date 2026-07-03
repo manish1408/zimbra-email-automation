@@ -8,6 +8,8 @@ from app.services.email_sync import EmailSyncService
 class RoutingResolver:
     """Map LLM classifications to folders, forwards, and ack/draft behavior."""
 
+    DRAFT_REPLY_CATEGORIES = frozenset({"customer_support", "orders"})
+
     def __init__(
         self,
         email_service: EmailSyncService | None = None,
@@ -69,9 +71,12 @@ class RoutingResolver:
     def should_draft_reply(self, classification: MessageClassification) -> bool:
         if classification.get("is_spam"):
             return False
+        slug = str(classification.get("category") or "")
+        if slug in self.DRAFT_REPLY_CATEGORIES:
+            return True
         if classification.get("needs_live_agent"):
             return True
-        rule = self.resolve_category_rule(classification["category"])
+        rule = self.resolve_category_rule(slug)
         return rule.needs_live_agent if rule else False
 
     def _lookup_employee(self, name: str) -> str | None:

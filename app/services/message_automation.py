@@ -29,6 +29,7 @@ def _actions_from_record(record: dict[str, Any] | None) -> dict[str, Any] | None
         "folder_moved": bool(record.get("folder_moved")),
         "forwarded_to": record.get("forwarded_to"),
         "ack_sent": bool(record.get("ack_sent")),
+        "ack_draft_saved": bool(record.get("ack_draft_saved")),
         "draft_saved": bool(record.get("draft_saved")),
     }
 
@@ -41,6 +42,7 @@ def _actions_from_action_taken(action: dict[str, Any] | None) -> dict[str, Any] 
         "folder_moved": bool(action.get("folder_moved")),
         "forwarded_to": action.get("forwarded_to"),
         "ack_sent": bool(action.get("ack_sent")),
+        "ack_draft_saved": bool(action.get("ack_draft_saved")),
         "draft_saved": bool(action.get("draft_saved")),
     }
 
@@ -91,6 +93,9 @@ def _result_from_db(
             "folder_moved": bool(action.get("folder_moved")),
             "forwarded_to": action.get("forwarded_to"),
             "ack_sent": bool(action.get("ack_sent_at")),
+            "ack_draft_saved": bool(
+                action.get("ack_body_text") and not action.get("ack_sent_at")
+            ),
             "draft_saved": bool(action.get("draft_saved")),
         }
         draft_reply_text = action.get("draft_reply_text")

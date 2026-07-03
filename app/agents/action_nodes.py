@@ -259,6 +259,7 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
         forwarded = sum(1 for a in actions if a.get("forwarded_to"))
         moved = sum(1 for a in actions if a.get("folder_moved"))
         acked = sum(1 for a in actions if a.get("ack_sent"))
+        ack_drafts = sum(1 for a in actions if a.get("ack_draft_saved"))
         drafts = sum(1 for a in actions if a.get("draft_saved"))
         errors = state.get("action_errors") or []
 
@@ -270,6 +271,7 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             "moved": moved,
             "forwarded": forwarded,
             "acked": acked,
+            "ack_drafts": ack_drafts,
             "drafts": drafts,
             "errors": errors,
             "classifications": classifications,

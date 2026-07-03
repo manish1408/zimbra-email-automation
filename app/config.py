@@ -49,7 +49,8 @@ class Settings(BaseSettings):
     # Automation actions
     automation_dry_run: bool = True
     automation_move_to_folders: bool = True
-    auto_send_ack: bool = True
+    auto_send_ack: bool = False
+    save_ack_as_draft: bool = True
 
     @property
     def scheme(self) -> str:

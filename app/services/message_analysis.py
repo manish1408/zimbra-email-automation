@@ -37,7 +37,10 @@ class MessageAnalysisItem(BaseModel):
     )
     draft_reply_text: str | None = Field(
         default=None,
-        description="Professional support reply body when needs_live_agent is true; otherwise null",
+        description=(
+            "Professional reply draft for customer_support and orders using thread "
+            "context; also when needs_live_agent is true; otherwise null"
+        ),
     )
 
 
@@ -120,6 +123,9 @@ class MessageAnalysisService:
         prompt = (
             "Analyze each email below. For every message return thread summary fields, "
             "classification fields, and draft_reply_text.\n"
+            "For category customer_support or orders, always write draft_reply_text as a "
+            "complete reply draft grounded in the thread (prior messages + current email). "
+            "For other categories, set draft_reply_text only when needs_live_agent is true.\n"
             "Personal details are redacted as [EMAIL], [PHONE], [LINK], [REDACTED]. "
             "Never invent facts. Keep summary bullets under 15 words.\n\n"
             f"{rules_prompt}"

@@ -148,8 +148,11 @@
                   <span class="date small text-muted">{{ formatDate(msg.date) }}</span>
                   <button
                     type="button"
-                    class="btn btn-sm btn-outline-secondary automation-row-btn"
-                    title="Open automation"
+                    class="btn btn-sm automation-row-btn"
+                    [class.btn-outline-secondary]="!isAutomated(msg.id)"
+                    [class.btn-success]="isAutomated(msg.id) && !automationFailed(msg.id)"
+                    [class.btn-outline-danger]="isAutomated(msg.id) && automationFailed(msg.id)"
+                    [title]="isAutomated(msg.id) ? 'Automation completed' : 'Open automation'"
                     aria-label="Open automation for this message"
                     (click)="openAutomationDrawer(msg, $event)"
                   >
@@ -161,6 +164,15 @@
                 </div>
                 <div class="subject-line">
                   <span class="subject text-truncate">{{ msg.subject || '(no subject)' }}</span>
+                  @if (isAutomated(msg.id)) {
+                    <span
+                      class="badge automation-badge"
+                      [class.text-bg-success]="!automationFailed(msg.id)"
+                      [class.text-bg-danger]="automationFailed(msg.id)"
+                    >
+                      {{ automationFailed(msg.id) ? 'Failed' : 'Automated' }}
+                    </span>
+                  }
                   @if (rowMetadata(msg.id)?.category) {
                     <span
                       class="badge category-badge"
@@ -201,7 +213,10 @@
               <h1 class="h5 mb-0 flex-grow-1">{{ selectedMessage.subject || '(no subject)' }}</h1>
               <button
                 type="button"
-                class="btn btn-sm btn-outline-primary automation-header-btn"
+                class="btn btn-sm automation-header-btn"
+                [class.btn-outline-primary]="!isAutomated(selectedMessage.id)"
+                [class.btn-success]="isAutomated(selectedMessage.id) && !automationFailed(selectedMessage.id)"
+                [class.btn-outline-danger]="isAutomated(selectedMessage.id) && automationFailed(selectedMessage.id)"
                 (click)="openAutomationDrawer(selectedMessage, $event)"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="me-1" viewBox="0 0 16 16" aria-hidden="true">
@@ -226,18 +241,29 @@
             </div>
           </div>
 
-          @if (selectedMetadata) {
+          @if (selectedMetadata || isAutomated(selectedMessage.id)) {
             <div class="automation-summary border-bottom px-3 py-2 d-flex flex-wrap gap-2 align-items-center">
-              @if (selectedMetadata.category) {
-                <span class="badge" [ngClass]="categoryClass(selectedMetadata.category)">
-                  {{ selectedMetadata.category }}
+              @if (isAutomated(selectedMessage.id)) {
+                <span
+                  class="badge"
+                  [class.text-bg-success]="!automationFailed(selectedMessage.id)"
+                  [class.text-bg-danger]="automationFailed(selectedMessage.id)"
+                >
+                  {{ automationFailed(selectedMessage.id) ? 'Automation failed' : 'Automated' }}
                 </span>
               }
-              @if (selectedMetadata.is_spam) {
-                <span class="badge bg-danger">Spam</span>
-              }
-              @if (selectedMetadata.forwarded_to) {
-                <span class="badge bg-info text-dark">→ {{ selectedMetadata.forwarded_to }}</span>
+              @if (selectedMetadata) {
+                @if (selectedMetadata.category) {
+                  <span class="badge" [ngClass]="categoryClass(selectedMetadata.category)">
+                    {{ selectedMetadata.category }}
+                  </span>
+                }
+                @if (selectedMetadata.is_spam) {
+                  <span class="badge bg-danger">Spam</span>
+                }
+                @if (selectedMetadata.forwarded_to) {
+                  <span class="badge bg-info text-dark">→ {{ selectedMetadata.forwarded_to }}</span>
+                }
               }
               <button
                 type="button"

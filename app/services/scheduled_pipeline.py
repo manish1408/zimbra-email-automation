@@ -35,13 +35,14 @@ def build_poll_query(
     settings: Settings,
     last_seen_date: str | None,
 ) -> str:
+    """Build inbox poll query. Avoid sort: — many Zimbra builds return HTTP 500 for sort:desc."""
     base = settings.sync_inbox_query
     if not last_seen_date:
         return f"{base} is:unread"
     after = _zimbra_after_date(last_seen_date, settings.sync_overlap_minutes)
     if after:
-        return f'{base} after:"{after}" sort:desc'
-    return f"{base} sort:desc"
+        return f"{base} after:{after}"
+    return base
 
 
 class ScheduledPipeline:

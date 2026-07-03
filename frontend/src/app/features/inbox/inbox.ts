@@ -219,9 +219,10 @@ export class InboxComponent implements OnInit {
     forkJoin({ detail: detail$, metadata: metadata$ }).subscribe({
       next: ({ detail, metadata }) => {
         this.selectedMessage = detail;
-        this.selectedMetadata = metadata;
-        if (metadata) {
-          this.metadataCache[message.id] = metadata;
+        const resolved = metadata ?? this.metadataCache[message.id] ?? null;
+        this.selectedMetadata = resolved;
+        if (resolved) {
+          this.metadataCache[message.id] = resolved;
         }
         this.relatedMessages = this.findRelated(detail);
         this.loadingDetail = false;
@@ -398,6 +399,15 @@ export class InboxComponent implements OnInit {
 
   rowMetadata(messageId: string): MessageMetadata | undefined {
     return this.metadataCache[messageId];
+  }
+
+  isAutomated(messageId: string): boolean {
+    const meta = this.metadataCache[messageId];
+    return Boolean(meta?.analyzed_at || meta?.processed_at);
+  }
+
+  automationFailed(messageId: string): boolean {
+    return Boolean(this.metadataCache[messageId]?.error);
   }
 
   private prefetchMetadata(messages: MessageSummary[]): void {

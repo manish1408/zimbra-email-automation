@@ -100,6 +100,7 @@ class ActionExecutor:
             "folder_moved": False,
             "forwarded_to": None,
             "ack_sent": False,
+            "ack_draft_saved": False,
             "draft_saved": False,
             "draft_reply_text": None,
             "ack_body_text": None,
@@ -137,7 +138,10 @@ class ActionExecutor:
                 )
                 record["forwarded_to"] = route_target
                 if ack_body:
-                    record["ack_sent"] = True
+                    if self.settings.save_ack_as_draft:
+                        record["ack_draft_saved"] = True
+                    elif self.settings.auto_send_ack:
+                        record["ack_sent"] = True
                 if draft_body:
                     record["draft_saved"] = True
             else:
@@ -152,18 +156,19 @@ class ActionExecutor:
                     )
                     record["forwarded_to"] = route_target
 
-                if self.settings.auto_send_ack and ack_body:
-                    await self.email_service.send_reply(account, msg_id, ack_body)
-                    record["ack_sent"] = True
+                if ack_body:
+                    if self.settings.save_ack_as_draft:
+                        await self._save_draft(
+                            account, message, ack_body, label="acknowledgement"
+                        )
+                        record["ack_draft_saved"] = True
+                    elif self.settings.auto_send_ack:
+                        await self.email_service.send_reply(account, msg_id, ack_body)
+                        record["ack_sent"] = True
 
                 if draft_body:
-                    subject = message.get("subject") or "Support request"
-                    to_addr = message.get("from") or message.get("from_address")
-                    await self.email_service.save_draft(
-                        account,
-                        subject=f"Re: {subject}",
-                        body_text=draft_body,
-                        to_address=to_addr,
+                    await self._save_draft(
+                        account, message, draft_body, label="response"
                     )
                     record["draft_saved"] = True
 
@@ -204,6 +209,27 @@ class ActionExecutor:
             )
 
         return record, error
+
+    async def _save_draft(
+        self,
+        account: str,
+        message: dict[str, Any],
+        body_text: str,
+        *,
+        label: str,
+    ) -> None:
+        subject = message.get("subject") or "Support request"
+        to_addr = message.get("from") or message.get("from_address")
+        draft_subject = f"Re: {subject}"
+        if label == "acknowledgement":
+            draft_subject = f"Re: {subject} (acknowledgement)"
+        await self.email_service.save_draft(
+            account,
+            subject=draft_subject,
+            body_text=body_text,
+            to_address=to_addr,
+        )
+        logger.info("Saved %s draft for message %s", label, message.get("id"))
 
     async def _move_to_folder(
         self,

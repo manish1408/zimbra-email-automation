@@ -27,6 +27,7 @@ class MessageActionRecord(TypedDict, total=False):
     folder_moved: bool
     forwarded_to: str | None
     ack_sent: bool
+    ack_draft_saved: bool
     draft_saved: bool
     draft_reply_text: str | None
     ack_body_text: str | None

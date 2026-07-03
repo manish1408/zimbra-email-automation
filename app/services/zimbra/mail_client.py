@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html as html_module
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,10 +28,15 @@ QUERY_ALIASES = {
     "in:anywhere": "is:anywhere",
 }
 
+# sort: in search queries triggers HTTP 500 on some Zimbra/Carbonio builds.
+_SORT_CLAUSE_RE = re.compile(r"\bsort:\s*\w+\b", re.IGNORECASE)
+
 
 def normalize_search_query(query: str) -> str:
     q = query.strip()
-    return QUERY_ALIASES.get(q.lower(), q)
+    q = QUERY_ALIASES.get(q.lower(), q)
+    q = _SORT_CLAUSE_RE.sub("", q).strip()
+    return " ".join(q.split())
 
 
 @dataclass
