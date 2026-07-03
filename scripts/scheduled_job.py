@@ -27,6 +27,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import settings
+from app.db.email_repository import require_postgres_database_url
+from app.db.pool import close_pool, init_pool
 from app.services.scheduled_pipeline import ScheduledPipeline
 
 logging.basicConfig(
@@ -50,17 +52,21 @@ async def run(args: argparse.Namespace) -> dict:
     elif args.live:
         settings.automation_dry_run = False
 
-    pipeline = ScheduledPipeline(settings)
-    if args.full_mailbox:
-        account = args.account or settings.sync_target_email
-        if not account:
-            raise SystemExit("Set SYNC_TARGET_EMAIL or pass --account")
-        return await pipeline.run_full_mailbox_automation(
-            account,
-            query=args.query,
-            process_all=True,
-        )
-    return await pipeline.run(skip_analysis=args.sync_only)
+    await init_pool(require_postgres_database_url(settings.database_url))
+    try:
+        pipeline = ScheduledPipeline(settings)
+        if args.full_mailbox:
+            account = args.account or settings.sync_target_email
+            if not account:
+                raise SystemExit("Set SYNC_TARGET_EMAIL or pass --account")
+            return await pipeline.run_full_mailbox_automation(
+                account,
+                query=args.query,
+                process_all=True,
+            )
+        return await pipeline.run(skip_analysis=args.sync_only)
+    finally:
+        await close_pool()
 
 
 def main() -> None:

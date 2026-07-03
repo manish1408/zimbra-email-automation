@@ -165,7 +165,7 @@ class MessageAutomationService:
             conn = await self.repository.connect()
             try:
                 if await self.repository.is_message_processed(conn, account, message_id):
-                    existing = await self.get_result(account, message_id)
+                    existing = await self.get_result(account, message_id, conn=conn)
                     if existing:
                         return MessageAutomationResult(
                             account=existing.account,
@@ -186,94 +186,101 @@ class MessageAutomationService:
             finally:
                 await conn.close()
 
-        thread_id = f"manual:{account}:{message_id}:{uuid.uuid4().hex[:8]}"
-        initial_state = {
-            "user_email": account,
-            "limit": 1,
-            "use_local_db": True,
-            "message_ids": [message_id],
-            "force_reprocess": force,
-            "automation_thread_id": thread_id,
-        }
+        conn = await self.repository.connect()
         try:
-            result = await run_action_pipeline(
-                initial_state,
-                email_service=self.email_service,
-                settings=self.settings,
-                email_repository=self.repository,
+            thread_id = f"manual:{account}:{message_id}:{uuid.uuid4().hex[:8]}"
+            initial_state = {
+                "user_email": account,
+                "limit": 1,
+                "use_local_db": True,
+                "message_ids": [message_id],
+                "force_reprocess": force,
+                "automation_thread_id": thread_id,
+            }
+            try:
+                result = await run_action_pipeline(
+                    initial_state,
+                    email_service=self.email_service,
+                    settings=self.settings,
+                    email_repository=self.repository,
+                    conn=conn,
+                )
+            except Exception as exc:
+                logger.exception("Automation pipeline failed for %s", message_id)
+                await self._persist_run(
+                    account,
+                    message_id,
+                    thread_id,
+                    status="failed",
+                    error=str(exc),
+                    conn=conn,
+                )
+                raise
+
+            messages = result.get("messages") or []
+            if not messages:
+                raise LookupError(f"Message {message_id} not found for {account}")
+
+            report = result.get("report") or {}
+            classifications = result.get("classifications") or []
+            actions_taken = result.get("actions_taken") or []
+            action_errors = result.get("action_errors") or []
+
+            classification = classifications[0] if classifications else None
+            action = actions_taken[0] if actions_taken else None
+            thread_summaries = result.get("thread_summaries") or []
+            thread_summary = (
+                thread_summaries[0]
+                if thread_summaries
+                else (action.get("thread_summary") if action else None)
             )
-        except Exception as exc:
-            logger.exception("Automation pipeline failed for %s", message_id)
+
+            if action_errors or (action and action.get("error")):
+                status = "failed"
+                error = "; ".join(action_errors) if action_errors else action.get("error")
+            elif not action and not force:
+                status = "skipped"
+                error = "Message already processed; use force=true to re-run"
+            else:
+                status = "completed"
+                error = None
+
+            dry_run = bool(report.get("dry_run", self.settings.automation_dry_run))
+            draft_reply_text = action.get("draft_reply_text") if action else None
+            ack_body_text = action.get("ack_body_text") if action else None
+
             await self._persist_run(
                 account,
                 message_id,
                 thread_id,
-                status="failed",
-                error=str(exc),
+                status=status,
+                dry_run=dry_run,
+                classification=dict(classification) if classification else None,
+                actions=_actions_from_action_taken(action),
+                draft_reply_text=draft_reply_text,
+                ack_body_text=ack_body_text,
+                report=report,
+                error=error,
+                conn=conn,
             )
-            raise
 
-        messages = result.get("messages") or []
-        if not messages:
-            raise LookupError(f"Message {message_id} not found for {account}")
-
-        report = result.get("report") or {}
-        classifications = result.get("classifications") or []
-        actions_taken = result.get("actions_taken") or []
-        action_errors = result.get("action_errors") or []
-
-        classification = classifications[0] if classifications else None
-        action = actions_taken[0] if actions_taken else None
-        thread_summaries = result.get("thread_summaries") or []
-        thread_summary = (
-            thread_summaries[0]
-            if thread_summaries
-            else (action.get("thread_summary") if action else None)
-        )
-
-        if action_errors or (action and action.get("error")):
-            status = "failed"
-            error = "; ".join(action_errors) if action_errors else action.get("error")
-        elif not action and not force:
-            status = "skipped"
-            error = "Message already processed; use force=true to re-run"
-        else:
-            status = "completed"
-            error = None
-
-        dry_run = bool(report.get("dry_run", self.settings.automation_dry_run))
-        draft_reply_text = action.get("draft_reply_text") if action else None
-        ack_body_text = action.get("ack_body_text") if action else None
-
-        await self._persist_run(
-            account,
-            message_id,
-            thread_id,
-            status=status,
-            dry_run=dry_run,
-            classification=dict(classification) if classification else None,
-            actions=_actions_from_action_taken(action),
-            draft_reply_text=draft_reply_text,
-            ack_body_text=ack_body_text,
-            report=report,
-            error=error,
-        )
-
-        return MessageAutomationResult(
-            account=account,
-            message_id=message_id,
-            thread_id=thread_id,
-            status=status,
-            dry_run=dry_run,
-            classification=dict(classification) if classification else None,
-            actions=_actions_from_action_taken(action),
-            draft_reply_text=draft_reply_text,
-            ack_body_text=ack_body_text,
-            thread_summary=thread_summary,
-            report=report,
-            error=error,
-            processed_at=None,
-        )
+            return MessageAutomationResult(
+                account=account,
+                message_id=message_id,
+                thread_id=thread_id,
+                status=status,
+                dry_run=dry_run,
+                classification=dict(classification) if classification else None,
+                actions=_actions_from_action_taken(action),
+                draft_reply_text=draft_reply_text,
+                ack_body_text=ack_body_text,
+                thread_summary=thread_summary,
+                report=report,
+                error=error,
+                processed_at=None,
+            )
+        finally:
+            await conn.close()
 
     async def get_thread_summary(
         self,
@@ -298,38 +305,34 @@ class MessageAutomationService:
                         current_points=summary.get("current_points") or [],
                         focus=summary.get("focus") or "",
                     )
-        finally:
-            await conn.close()
 
-        if not refresh:
-            raise LookupError(
-                f"No cached thread summary for message {message_id}; "
-                "run automation or pass refresh=true to generate one"
+            if not refresh:
+                raise LookupError(
+                    f"No cached thread summary for message {message_id}; "
+                    "run automation or pass refresh=true to generate one"
+                )
+
+            message = await self._load_message_dict(account, message_id, conn=conn)
+            if not message:
+                raise LookupError(f"Message {message_id} not found for {account}")
+
+            related: list[dict[str, Any]] = []
+            try:
+                thread_messages = await self.email_service.search_thread_messages(
+                    account,
+                    message.get("subject"),
+                    exclude_id=message_id,
+                    limit=4,
+                )
+                related = [item.model_dump(by_alias=True) for item in thread_messages]
+            except Exception:
+                related = []
+
+            training = await load_general_rules(self.repository, conn)
+            summary = await ThreadSummaryService(self.settings).summarize(
+                message, related, agent_training=training
             )
 
-        message = await self._load_message_dict(account, message_id)
-        if not message:
-            raise LookupError(f"Message {message_id} not found for {account}")
-
-        related: list[dict[str, Any]] = []
-        try:
-            thread_messages = await self.email_service.search_thread_messages(
-                account,
-                message.get("subject"),
-                exclude_id=message_id,
-                limit=4,
-            )
-            related = [item.model_dump(by_alias=True) for item in thread_messages]
-        except Exception:
-            related = []
-
-        training = await load_general_rules(self.repository)
-        summary = await ThreadSummaryService(self.settings).summarize(
-            message, related, agent_training=training
-        )
-
-        conn = await self.repository.connect()
-        try:
             await self.repository.save_thread_summary(conn, account, message_id, summary)
             if hasattr(conn, "commit"):
                 await conn.commit()
@@ -345,9 +348,11 @@ class MessageAutomationService:
         )
 
     async def _load_message_dict(
-        self, account: str, message_id: str
+        self, account: str, message_id: str, *, conn: Any | None = None
     ) -> dict[str, Any] | None:
-        conn = await self.repository.connect()
+        own_conn = conn is None
+        if own_conn:
+            conn = await self.repository.connect()
         try:
             detail = await self.repository.get_message(conn, account, message_id)
             if detail:
@@ -359,7 +364,8 @@ class MessageAutomationService:
                         pass
                 return EmailRepository.to_summary_dict(detail)
         finally:
-            await conn.close()
+            if own_conn and conn is not None:
+                await conn.close()
 
         try:
             detail = await self.email_service.get_message(account, message_id)
@@ -374,8 +380,11 @@ class MessageAutomationService:
         *,
         include_runs: bool = True,
         runs_limit: int = 10,
+        conn: Any | None = None,
     ) -> MessageAutomationResult | None:
-        conn = await self.repository.connect()
+        own_conn = conn is None
+        if own_conn:
+            conn = await self.repository.connect()
         try:
             action = await self.repository.get_message_action(conn, account, message_id)
             runs: list[dict[str, Any]] = []
@@ -384,7 +393,8 @@ class MessageAutomationService:
                     conn, account, message_id, limit=runs_limit
                 )
         finally:
-            await conn.close()
+            if own_conn and conn is not None:
+                await conn.close()
 
         if not _automation_completed(action) and not runs:
             return None
@@ -430,8 +440,11 @@ class MessageAutomationService:
         ack_body_text: str | None = None,
         report: dict[str, Any] | None = None,
         error: str | None = None,
+        conn: Any | None = None,
     ) -> None:
-        conn = await self.repository.connect()
+        own_conn = conn is None
+        if own_conn:
+            conn = await self.repository.connect()
         try:
             await self.repository.save_message_automation_run(
                 conn,
@@ -449,7 +462,8 @@ class MessageAutomationService:
             )
             await conn.commit() if hasattr(conn, "commit") else None
         finally:
-            await conn.close()
+            if own_conn and conn is not None:
+                await conn.close()
 
     async def run_for_mailbox(self, account: str) -> dict[str, Any]:
         """Run classify-and-move pipeline on all unanalyzed messages (same as cron job)."""

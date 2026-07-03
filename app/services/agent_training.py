@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from app.db.email_repository import EmailRepository
 
 GENERAL_TRAINING_HEADER = "\n\n--- General rules ---\n"
@@ -13,18 +15,20 @@ def augment_system_prompt(base: str, training: str | None, *, header: str = GENE
     return f"{base}{header}{text}"
 
 
-async def load_general_rules(repository: EmailRepository) -> str:
-    row = await repository.get_agent_training()
+async def load_general_rules(repository: EmailRepository, conn: Any | None = None) -> str:
+    row = await repository.get_agent_training(conn)
     return (row.get("general_rules") or "").strip()
 
 
-async def load_draft_reply_rules(repository: EmailRepository) -> str:
-    row = await repository.get_agent_training()
+async def load_draft_reply_rules(repository: EmailRepository, conn: Any | None = None) -> str:
+    row = await repository.get_agent_training(conn)
     return (row.get("draft_reply_rules") or "").strip()
 
 
-async def load_training_texts(repository: EmailRepository) -> tuple[str, str]:
-    row = await repository.get_agent_training()
+async def load_training_texts(
+    repository: EmailRepository, conn: Any | None = None
+) -> tuple[str, str]:
+    row = await repository.get_agent_training(conn)
     return (
         (row.get("general_rules") or "").strip(),
         (row.get("draft_reply_rules") or "").strip(),

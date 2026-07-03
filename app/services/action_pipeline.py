@@ -28,33 +28,46 @@ async def run_action_pipeline(
     settings: Settings,
     email_repository: EmailRepository | None = None,
     resolver: RoutingResolver | None = None,
+    conn: Any | None = None,
 ) -> dict[str, Any]:
     """Run the production email automation pipeline sequentially."""
     state: dict[str, Any] = dict(initial_state)
-    if email_repository:
-        if state.get("agent_training") is None or state.get("draft_reply_rules") is None:
-            general_rules, draft_reply_rules = await load_training_texts(email_repository)
-            state.setdefault("agent_training", general_rules)
-            state.setdefault("draft_reply_rules", draft_reply_rules)
-        if state.get("classification_rules") is None:
-            state["classification_rules"] = await load_classification_rules(
-                email_repository
-            )
+    owns_conn = conn is None and email_repository is not None
+    if owns_conn:
+        conn = await email_repository.connect()
+    if conn is not None:
+        state["db_conn"] = conn
 
-    rules = state.get("classification_rules")
-    if resolver is None:
-        if not rules:
-            raise ValueError("Classification rules are required to run the pipeline")
-        resolver = RoutingResolver(email_service=email_service, rules=rules)
+    try:
+        if email_repository:
+            if state.get("agent_training") is None or state.get("draft_reply_rules") is None:
+                general_rules, draft_reply_rules = await load_training_texts(
+                    email_repository, conn
+                )
+                state.setdefault("agent_training", general_rules)
+                state.setdefault("draft_reply_rules", draft_reply_rules)
+            if state.get("classification_rules") is None:
+                state["classification_rules"] = await load_classification_rules(
+                    email_repository, conn
+                )
 
-    ctx = ActionNodeContext(
-        email_service=email_service,
-        settings=settings,
-        email_repository=email_repository,
-        resolver=resolver,
-    )
-    nodes = make_action_nodes(ctx)
-    for step in PIPELINE_STEPS:
-        patch = await nodes[step](state)
-        state.update(patch)
-    return state
+        rules = state.get("classification_rules")
+        if resolver is None:
+            if not rules:
+                raise ValueError("Classification rules are required to run the pipeline")
+            resolver = RoutingResolver(email_service=email_service, rules=rules)
+
+        ctx = ActionNodeContext(
+            email_service=email_service,
+            settings=settings,
+            email_repository=email_repository,
+            resolver=resolver,
+        )
+        nodes = make_action_nodes(ctx)
+        for step in PIPELINE_STEPS:
+            patch = await nodes[step](state)
+            state.update(patch)
+        return state
+    finally:
+        if owns_conn and conn is not None:
+            await conn.close()

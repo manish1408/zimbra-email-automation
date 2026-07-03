@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.config import settings
+from app.db.email_repository import require_postgres_database_url
+from app.db.pool import close_pool, init_pool
 from app.services.email_sync import EmailSyncService
 
 OPENAPI_TAGS = [
@@ -39,8 +41,12 @@ OPENAPI_TAGS = [
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    await init_pool(require_postgres_database_url(settings.database_url))
     application.state.email_service = EmailSyncService(settings)
-    yield
+    try:
+        yield
+    finally:
+        await close_pool()
 
 
 def create_app() -> FastAPI:

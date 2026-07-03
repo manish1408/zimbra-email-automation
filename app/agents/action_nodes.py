@@ -4,7 +4,7 @@ from typing import Any
 
 from app.agents.state import PipelineState
 from app.config import Settings
-from app.db.email_repository import EmailRepository
+from app.db.email_repository import DbConnection, EmailRepository
 from app.services.action_executor import ActionExecutor
 from app.services.email_sync import EmailSyncService
 from app.services.llm import llm_configured
@@ -39,18 +39,20 @@ class ActionNodeContext:
         )
 
 
+def _pipeline_conn(state: PipelineState) -> DbConnection | None:
+    return state.get("db_conn")
+
+
 def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
-    async def _load_message(user_email: str, message_id: str) -> dict[str, Any] | None:
-        if ctx.email_repository:
-            conn = await ctx.email_repository.connect()
-            try:
-                detail = await ctx.email_repository.get_message(
-                    conn, user_email, message_id
-                )
-                if detail:
-                    return EmailRepository.to_summary_dict(detail)
-            finally:
-                await conn.close()
+    async def _load_message(
+        user_email: str,
+        message_id: str,
+        conn: DbConnection | None,
+    ) -> dict[str, Any] | None:
+        if ctx.email_repository and conn is not None:
+            detail = await ctx.email_repository.get_message(conn, user_email, message_id)
+            if detail:
+                return EmailRepository.to_summary_dict(detail)
         try:
             detail = await ctx.email_service.get_message(
                 user_email=user_email,
@@ -61,33 +63,30 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             return None
 
     async def _load_cached_summaries(
-        account: str, message_ids: list[str]
+        account: str,
+        message_ids: list[str],
+        conn: DbConnection | None,
     ) -> dict[str, dict[str, Any]]:
-        if not ctx.email_repository or not message_ids:
+        if not ctx.email_repository or not message_ids or conn is None:
             return {}
         cached: dict[str, dict[str, Any]] = {}
-        conn = await ctx.email_repository.connect()
-        try:
-            for msg_id in message_ids:
-                action = await ctx.email_repository.get_message_action(
-                    conn, account, msg_id
-                )
-                summary = action.get("thread_summary") if action else None
-                if summary and isinstance(summary, dict):
-                    cached[msg_id] = summary
-        finally:
-            await conn.close()
+        for msg_id in message_ids:
+            action = await ctx.email_repository.get_message_action(conn, account, msg_id)
+            summary = action.get("thread_summary") if action else None
+            if summary and isinstance(summary, dict):
+                cached[msg_id] = summary
         return cached
 
     async def ingest_mailbox(state: PipelineState) -> dict:
         user_email = state["user_email"]
         limit = state.get("limit") or ctx.settings.agent_inbox_limit
         message_ids = state.get("message_ids")
+        conn = _pipeline_conn(state)
 
         if message_ids:
             messages: list[dict[str, Any]] = []
             for message_id in message_ids:
-                loaded = await _load_message(user_email, str(message_id))
+                loaded = await _load_message(user_email, str(message_id), conn)
                 if loaded:
                     messages.append(loaded)
             return {
@@ -96,17 +95,11 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 "current_node": "ingest_mailbox",
             }
 
-        if state.get("use_local_db") and ctx.email_repository:
-            conn = await ctx.email_repository.connect()
-            try:
-                stored = await ctx.email_repository.get_unanalyzed_messages(
-                    conn, user_email, limit=limit
-                )
-                messages = [
-                    EmailRepository.to_summary_dict(m) for m in stored
-                ]
-            finally:
-                await conn.close()
+        if state.get("use_local_db") and ctx.email_repository and conn is not None:
+            stored = await ctx.email_repository.get_unanalyzed_messages(
+                conn, user_email, limit=limit
+            )
+            messages = [EmailRepository.to_summary_dict(m) for m in stored]
         else:
             inbox = await ctx.email_service.get_inbox(user_email=user_email, limit=limit)
             messages = [m.model_dump(by_alias=True) for m in inbox.messages]
@@ -117,25 +110,20 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
         user_email = state["user_email"]
         messages = list(state.get("messages") or [])
         enriched: list[dict[str, Any]] = []
+        conn = _pipeline_conn(state)
 
         for message in messages:
             if message.get("body"):
                 enriched.append(message)
                 continue
             try:
-                if state.get("use_local_db") and ctx.email_repository:
-                    conn = await ctx.email_repository.connect()
-                    try:
-                        detail = await ctx.email_repository.get_message(
-                            conn, user_email, str(message.get("id"))
-                        )
-                        enriched.append(
-                            EmailRepository.to_summary_dict(detail)
-                            if detail
-                            else message
-                        )
-                    finally:
-                        await conn.close()
+                if state.get("use_local_db") and ctx.email_repository and conn is not None:
+                    detail = await ctx.email_repository.get_message(
+                        conn, user_email, str(message.get("id"))
+                    )
+                    enriched.append(
+                        EmailRepository.to_summary_dict(detail) if detail else message
+                    )
                 else:
                     detail = await ctx.email_service.get_message(
                         user_email=user_email,
@@ -163,7 +151,9 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             raise ValueError("Classification rules are not loaded")
 
         msg_ids = [str(m.get("id", "")) for m in messages]
-        cached_summaries = await _load_cached_summaries(user_email, msg_ids)
+        cached_summaries = await _load_cached_summaries(
+            user_email, msg_ids, _pipeline_conn(state)
+        )
 
         related_by_id: dict[str, list[dict[str, Any]]] = {}
         for message in messages:
@@ -227,37 +217,34 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
         account = state["user_email"]
         messages = state.get("enriched_messages") or state.get("messages") or []
         classifications = state.get("classifications") or []
+        conn = _pipeline_conn(state)
 
-        if not ctx.email_repository:
+        if not ctx.email_repository or conn is None:
             return {
                 "actions_taken": [],
                 "action_errors": ["email_repository not configured"],
                 "current_node": "apply_actions",
             }
 
-        conn = await ctx.email_repository.connect()
-        try:
-            summaries_by_id = {
-                str(item.get("message_id")): item
-                for item in (state.get("thread_summaries") or [])
-            }
-            actions, errors = await ctx.executor.apply_all(
-                conn,
-                account,
-                messages,
-                classifications,
-                force_reprocess=bool(state.get("force_reprocess")),
-                automation_thread_id=state.get("automation_thread_id"),
-                report=state.get("report"),
-                thread_summaries=summaries_by_id,
-                draft_replies=state.get("draft_replies") or {},
-            )
-            zimbra_ids = [c["message_id"] for c in classifications]
-            await ctx.email_repository.mark_analyzed(conn, account, zimbra_ids)
-            if hasattr(conn, "commit"):
-                await conn.commit()
-        finally:
-            await conn.close()
+        summaries_by_id = {
+            str(item.get("message_id")): item
+            for item in (state.get("thread_summaries") or [])
+        }
+        actions, errors = await ctx.executor.apply_all(
+            conn,
+            account,
+            messages,
+            classifications,
+            force_reprocess=bool(state.get("force_reprocess")),
+            automation_thread_id=state.get("automation_thread_id"),
+            report=state.get("report"),
+            thread_summaries=summaries_by_id,
+            draft_replies=state.get("draft_replies") or {},
+        )
+        zimbra_ids = [c["message_id"] for c in classifications]
+        await ctx.email_repository.mark_analyzed(conn, account, zimbra_ids)
+        if hasattr(conn, "commit"):
+            await conn.commit()
 
         return {
             "actions_taken": actions,

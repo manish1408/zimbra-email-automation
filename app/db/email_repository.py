@@ -40,20 +40,26 @@ class EmailRepository:
     def to_summary_dict(message: MessageDetail | MessageSummary) -> dict[str, Any]:
         return message.model_dump(by_alias=True)
 
-    async def get_agent_training(self) -> dict[str, Any]:
-        return await self._backend.get_agent_training()
+    async def get_agent_training(self, conn: DbConnection | None = None) -> dict[str, Any]:
+        return await self._backend.get_agent_training(conn)
 
-    async def upsert_agent_training(self, content: str) -> dict[str, Any]:
-        return await self._backend.upsert_agent_general_rules(content)
+    async def upsert_agent_training(self, content: str, conn: DbConnection | None = None) -> dict[str, Any]:
+        return await self._backend.upsert_agent_general_rules(content, conn)
 
-    async def upsert_agent_general_rules(self, general_rules: str) -> dict[str, Any]:
-        return await self._backend.upsert_agent_general_rules(general_rules)
+    async def upsert_agent_general_rules(
+        self, general_rules: str, conn: DbConnection | None = None
+    ) -> dict[str, Any]:
+        return await self._backend.upsert_agent_general_rules(general_rules, conn)
 
-    async def upsert_agent_draft_reply_rules(self, draft_reply_rules: str) -> dict[str, Any]:
-        return await self._backend.upsert_agent_draft_reply_rules(draft_reply_rules)
+    async def upsert_agent_draft_reply_rules(
+        self, draft_reply_rules: str, conn: DbConnection | None = None
+    ) -> dict[str, Any]:
+        return await self._backend.upsert_agent_draft_reply_rules(draft_reply_rules, conn)
 
-    async def get_classification_rules(self) -> dict[str, Any]:
-        return await self._backend.get_classification_rules()
+    async def get_classification_rules(self, conn: DbConnection | None = None) -> dict[str, Any]:
+        return await self._backend.get_classification_rules(conn)
 
-    async def save_classification_rules(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await self._backend.save_classification_rules(payload)
+    async def save_classification_rules(
+        self, payload: dict[str, Any], conn: DbConnection | None = None
+    ) -> dict[str, Any]:
+        return await self._backend.save_classification_rules(payload, conn)

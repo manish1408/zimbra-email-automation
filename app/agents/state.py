@@ -60,3 +60,4 @@ class PipelineState(TypedDict, total=False):
     action_errors: list[str]
     report: dict[str, Any]
     current_node: str
+    db_conn: Any

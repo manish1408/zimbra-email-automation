@@ -2,15 +2,13 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import asyncpg
 
+from app.db.pool import get_pool
 from app.models.schemas import MessageDetail, MessageSummary
 from app.services.zimbra.soap import normalize_zimbra_date
-
-_SCHEMA_DIR = Path(__file__).resolve().parent / "migrations"
 
 
 def _utc_now() -> datetime:
@@ -24,10 +22,7 @@ class PostgresEmailRepository:
         self.database_url = database_url
 
     async def connect(self) -> asyncpg.Connection:
-        conn = await asyncpg.connect(self.database_url)
-        for path in sorted(_SCHEMA_DIR.glob("*.sql")):
-            await conn.execute(path.read_text())
-        return conn
+        return await get_pool().acquire()
 
     async def upsert_message(self, conn: asyncpg.Connection, message: MessageDetail) -> bool:
         existing = await conn.fetchval(
@@ -568,8 +563,10 @@ class PostgresEmailRepository:
     def to_summary_dict(message: MessageDetail | MessageSummary) -> dict[str, Any]:
         return message.model_dump(by_alias=True)
 
-    async def get_agent_training(self) -> dict[str, Any]:
-        conn = await self.connect()
+    async def get_agent_training(self, conn: asyncpg.Connection | None = None) -> dict[str, Any]:
+        own_conn = conn is None
+        if own_conn:
+            conn = await self.connect()
         try:
             row = await conn.fetchrow(
                 """
@@ -590,12 +587,17 @@ class PostgresEmailRepository:
                 "updated_at": updated_at.isoformat() if updated_at else None,
             }
         finally:
-            await conn.close()
+            if own_conn and conn is not None:
+                await conn.close()
 
-    async def upsert_agent_general_rules(self, general_rules: str) -> dict[str, Any]:
-        now = _utc_now()
-        conn = await self.connect()
+    async def upsert_agent_general_rules(
+        self, general_rules: str, conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any]:
+        own_conn = conn is None
+        if own_conn:
+            conn = await self.connect()
         try:
+            now = _utc_now()
             row = await conn.fetchrow(
                 """
                 INSERT INTO agent_training (id, content, updated_at)
@@ -614,12 +616,17 @@ class PostgresEmailRepository:
                 "updated_at": updated_at.isoformat() if updated_at else None,
             }
         finally:
-            await conn.close()
+            if own_conn and conn is not None:
+                await conn.close()
 
-    async def upsert_agent_draft_reply_rules(self, draft_reply_rules: str) -> dict[str, Any]:
-        now = _utc_now()
-        conn = await self.connect()
+    async def upsert_agent_draft_reply_rules(
+        self, draft_reply_rules: str, conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any]:
+        own_conn = conn is None
+        if own_conn:
+            conn = await self.connect()
         try:
+            now = _utc_now()
             row = await conn.fetchrow(
                 """
                 INSERT INTO agent_training (id, draft_reply_content, updated_at)
@@ -639,10 +646,15 @@ class PostgresEmailRepository:
                 "updated_at": updated_at.isoformat() if updated_at else None,
             }
         finally:
-            await conn.close()
+            if own_conn and conn is not None:
+                await conn.close()
 
-    async def get_classification_rules(self) -> dict[str, Any]:
-        conn = await self.connect()
+    async def get_classification_rules(
+        self, conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any]:
+        own_conn = conn is None
+        if own_conn:
+            conn = await self.connect()
         try:
             config_row = await conn.fetchrow(
                 """
@@ -668,7 +680,8 @@ class PostgresEmailRepository:
                 """
             )
         finally:
-            await conn.close()
+            if own_conn and conn is not None:
+                await conn.close()
 
         if not config_row:
             return {
@@ -726,13 +739,17 @@ class PostgresEmailRepository:
             "updated_at": updated_at.isoformat() if updated_at else None,
         }
 
-    async def save_classification_rules(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def save_classification_rules(
+        self, payload: dict[str, Any], conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any]:
         config = payload.get("config") or {}
         categories = payload.get("categories") or []
         employees = payload.get("employees") or []
         now = _utc_now()
 
-        conn = await self.connect()
+        own_conn = conn is None
+        if own_conn:
+            conn = await self.connect()
         try:
             async with conn.transaction():
                 await conn.execute(
@@ -789,6 +806,7 @@ class PostgresEmailRepository:
                         json.dumps(list(item.get("aliases") or [])),
                     )
         finally:
-            await conn.close()
+            if own_conn and conn is not None:
+                await conn.close()
 
-        return await self.get_classification_rules()
+        return await self.get_classification_rules(conn if not own_conn else None)

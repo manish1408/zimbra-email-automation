@@ -185,13 +185,17 @@ class ClassificationRules:
         }
 
 
-async def load_classification_rules(repository: EmailRepository) -> ClassificationRules:
-    data = await repository.get_classification_rules()
+async def load_classification_rules(
+    repository: EmailRepository, conn: Any | None = None
+) -> ClassificationRules:
+    data = await repository.get_classification_rules(conn)
     return ClassificationRules.from_api_dict(data)
 
 
 async def save_classification_rules(
-    repository: EmailRepository, rules: ClassificationRules
+    repository: EmailRepository,
+    rules: ClassificationRules,
+    conn: Any | None = None,
 ) -> ClassificationRules:
-    data = await repository.save_classification_rules(rules.to_api_dict())
+    data = await repository.save_classification_rules(rules.to_api_dict(), conn)
     return ClassificationRules.from_api_dict(data)

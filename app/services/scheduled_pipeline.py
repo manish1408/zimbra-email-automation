@@ -242,6 +242,7 @@ class ScheduledPipeline:
             email_service=self.email_service,
             settings=self.settings,
             email_repository=self.repository,
+            conn=conn,
         )
 
         report = result.get("report") or {}

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.api.deps import get_email_repository
-from app.db.email_repository import EmailRepository
+from app.api.deps import get_db_connection, get_email_repository
+from app.db.email_repository import DbConnection, EmailRepository
 from app.models.schemas import (
     AnalysisRunListResponse,
     AnalysisRunSummary,
@@ -26,15 +26,12 @@ async def list_local_messages(
     offset: int = Query(default=0, ge=0),
     analyzed: bool | None = Query(default=None, description="Filter by analyzed status"),
     repository: EmailRepository = Depends(get_email_repository),
+    conn: DbConnection = Depends(get_db_connection),
 ):
     try:
-        conn = await repository.connect()
-        try:
-            messages, total = await repository.get_messages(
-                conn, user_email, limit=limit, offset=offset, analyzed=analyzed
-            )
-        finally:
-            await conn.close()
+        messages, total = await repository.get_messages(
+            conn, user_email, limit=limit, offset=offset, analyzed=analyzed
+        )
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
 
@@ -58,13 +55,10 @@ async def get_local_message(
     user_email: str,
     message_id: str,
     repository: EmailRepository = Depends(get_email_repository),
+    conn: DbConnection = Depends(get_db_connection),
 ):
     try:
-        conn = await repository.connect()
-        try:
-            message = await repository.get_message(conn, user_email, message_id)
-        finally:
-            await conn.close()
+        message = await repository.get_message(conn, user_email, message_id)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
 
@@ -82,14 +76,11 @@ async def get_message_metadata(
     user_email: str,
     message_id: str,
     repository: EmailRepository = Depends(get_email_repository),
+    conn: DbConnection = Depends(get_db_connection),
 ):
     try:
-        conn = await repository.connect()
-        try:
-            action = await repository.get_message_action(conn, user_email, message_id)
-            analyzed_at = await repository.get_analyzed_at(conn, user_email, message_id)
-        finally:
-            await conn.close()
+        action = await repository.get_message_action(conn, user_email, message_id)
+        analyzed_at = await repository.get_analyzed_at(conn, user_email, message_id)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
 
@@ -131,15 +122,12 @@ async def get_message_metadata(
 async def get_local_stats(
     user_email: str,
     repository: EmailRepository = Depends(get_email_repository),
+    conn: DbConnection = Depends(get_db_connection),
 ):
     try:
-        conn = await repository.connect()
-        try:
-            total = await repository.count_messages(conn, user_email)
-            unanalyzed = await repository.count_unanalyzed(conn, user_email)
-            state = await repository.get_mailbox_state(conn, user_email)
-        finally:
-            await conn.close()
+        total = await repository.count_messages(conn, user_email)
+        unanalyzed = await repository.count_unanalyzed(conn, user_email)
+        state = await repository.get_mailbox_state(conn, user_email)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
 
@@ -167,13 +155,10 @@ async def list_analysis_runs(
     user_email: str,
     limit: int = Query(default=20, ge=1, le=100),
     repository: EmailRepository = Depends(get_email_repository),
+    conn: DbConnection = Depends(get_db_connection),
 ):
     try:
-        conn = await repository.connect()
-        try:
-            runs = await repository.get_analysis_runs(conn, user_email, limit=limit)
-        finally:
-            await conn.close()
+        runs = await repository.get_analysis_runs(conn, user_email, limit=limit)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
 
