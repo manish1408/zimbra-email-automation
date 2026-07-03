@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.state import MessageClassification
 from app.config import Settings
+from app.services.agent_training import augment_system_prompt
 from app.services.classification_rules import ClassificationRules
 from app.services.email_thread import build_thread_context
 from app.services.llm import create_chat_llm, llm_configured, ainvoke_structured
