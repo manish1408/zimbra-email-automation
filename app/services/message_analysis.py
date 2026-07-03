@@ -121,8 +121,11 @@ class MessageAnalysisService:
                 f"{draft_reply_rules.strip()}\n"
             )
         prompt = (
-            "Analyze each email below. For every message return thread summary fields, "
-            "classification fields, and draft_reply_text.\n"
+            "Analyze each email below. Read the full CURRENT EMAIL text carefully before "
+            "classifying — do not judge by From address alone (e.g. mailer@shopify.com "
+            "often forwards real customer contact-form enquiries). "
+            "For every message return thread summary fields, classification fields, "
+            "and draft_reply_text.\n"
             "For category customer_support or orders, always write draft_reply_text as a "
             "complete reply draft grounded in the thread (prior messages + current email). "
             "For other categories, set draft_reply_text only when needs_live_agent is true.\n"

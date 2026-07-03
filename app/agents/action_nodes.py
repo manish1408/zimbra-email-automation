@@ -7,6 +7,7 @@ from app.config import Settings
 from app.db.email_repository import DbConnection, EmailRepository
 from app.services.action_executor import ActionExecutor
 from app.services.email_sync import EmailSyncService
+from app.services.email_thread import message_needs_full_body
 from app.services.llm import llm_configured
 from app.services.message_analysis import MessageAnalysisService
 from app.services.routing import RoutingResolver
@@ -44,23 +45,56 @@ def _pipeline_conn(state: PipelineState) -> DbConnection | None:
 
 
 def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
+    async def _fetch_full_message(
+        user_email: str,
+        message_id: str,
+        message: dict[str, Any],
+        conn: DbConnection | None,
+    ) -> dict[str, Any]:
+        detail = await ctx.email_service.get_message(
+            user_email=user_email,
+            message_id=message_id,
+        )
+        merged = {**message, **detail.model_dump(by_alias=True)}
+        if ctx.email_repository and conn is not None:
+            await ctx.email_repository.upsert_message(conn, detail)
+        return merged
+
+    async def _ensure_readable_content(
+        user_email: str,
+        message: dict[str, Any],
+        conn: DbConnection | None,
+    ) -> dict[str, Any]:
+        if not message_needs_full_body(message):
+            return message
+        message_id = str(message.get("id") or "")
+        if not message_id:
+            return message
+        try:
+            return await _fetch_full_message(user_email, message_id, message, conn)
+        except Exception:
+            return message
+
     async def _load_message(
         user_email: str,
         message_id: str,
         conn: DbConnection | None,
     ) -> dict[str, Any] | None:
+        message: dict[str, Any] | None = None
         if ctx.email_repository and conn is not None:
             detail = await ctx.email_repository.get_message(conn, user_email, message_id)
             if detail:
-                return EmailRepository.to_summary_dict(detail)
-        try:
-            detail = await ctx.email_service.get_message(
-                user_email=user_email,
-                message_id=message_id,
-            )
-            return detail.model_dump(by_alias=True)
-        except Exception:
-            return None
+                message = EmailRepository.to_summary_dict(detail)
+        if message is None:
+            try:
+                detail = await ctx.email_service.get_message(
+                    user_email=user_email,
+                    message_id=message_id,
+                )
+                message = detail.model_dump(by_alias=True)
+            except Exception:
+                return None
+        return await _ensure_readable_content(user_email, message, conn)
 
     async def _load_cached_summaries(
         account: str,
@@ -113,23 +147,10 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
         conn = _pipeline_conn(state)
 
         for message in messages:
-            if message.get("body"):
-                enriched.append(message)
-                continue
             try:
-                if state.get("use_local_db") and ctx.email_repository and conn is not None:
-                    detail = await ctx.email_repository.get_message(
-                        conn, user_email, str(message.get("id"))
-                    )
-                    enriched.append(
-                        EmailRepository.to_summary_dict(detail) if detail else message
-                    )
-                else:
-                    detail = await ctx.email_service.get_message(
-                        user_email=user_email,
-                        message_id=str(message.get("id")),
-                    )
-                    enriched.append(detail.model_dump(by_alias=True))
+                enriched.append(
+                    await _ensure_readable_content(user_email, message, conn)
+                )
             except Exception:
                 enriched.append(message)
 

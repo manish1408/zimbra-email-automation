@@ -16,7 +16,7 @@ from app.services.email_sync import EmailSyncService
 from app.services.agent_training import load_general_rules
 from app.services.llm import llm_configured, llm_not_configured_message
 from app.services.scheduled_pipeline import ScheduledPipeline
-from app.services.thread_summary import ThreadSummaryService
+from app.services.email_thread import message_needs_full_body
 
 logger = logging.getLogger(__name__)
 
@@ -361,13 +361,16 @@ class MessageAutomationService:
         try:
             detail = await self.repository.get_message(conn, account, message_id)
             if detail:
-                if not detail.body:
+                message = EmailRepository.to_summary_dict(detail)
+                if message_needs_full_body(message):
                     try:
                         full = await self.email_service.get_message(account, message_id)
-                        detail.body = full.body
+                        message = full.model_dump(by_alias=True)
+                        if conn is not None:
+                            await self.repository.upsert_message(conn, full)
                     except Exception:
                         pass
-                return EmailRepository.to_summary_dict(detail)
+                return message
         finally:
             if own_conn and conn is not None:
                 await conn.close()

@@ -28,6 +28,10 @@ Admin credentials
 └──────────────────┘
 ```
 
+## Production deployment
+
+The app is deployed on **176.123.3.2**. See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for redeploy commands, service management, logs, and troubleshooting.
+
 ## Quick start
 
 ### Backend (FastAPI)

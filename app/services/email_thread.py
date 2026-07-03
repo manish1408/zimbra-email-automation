@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as html_module
 import re
 from typing import Any
 
@@ -17,6 +18,55 @@ _PHONE_RE = re.compile(
     r"(?<!\d)(?:\+?\d{1,3}[\s.-]?)?(?:\(\d{2,4}\)[\s.-]?|\d{2,4}[\s.-])\d{3,4}[\s.-]?\d{3,4}(?!\d)"
 )
 _URL_RE = re.compile(r"https?://[^\s<>\"]+|www\.[^\s<>\"]+", re.IGNORECASE)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_MIN_READABLE_CHARS = 40
+
+
+def _looks_like_html(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if stripped.startswith("<!DOCTYPE") or stripped.startswith("<html"):
+        return True
+    return bool(_HTML_TAG_RE.search(stripped)) and stripped.count("<") >= 2
+
+
+def html_to_text(html: str) -> str:
+    """Convert HTML email bodies to plain text for LLM analysis."""
+    if not html or not html.strip():
+        return ""
+    text = re.sub(
+        r"<(script|style|head)[^>]*>[\s\S]*?</\1>",
+        "",
+        html,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</(?:p|div|tr|li|h[1-6])>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = html_module.unescape(text)
+    text = text.replace("\xa0", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def extract_message_text(message: dict[str, Any]) -> str:
+    """Best-effort plain text from stored body or inbox fragment."""
+    body = (message.get("body") or "").strip()
+    fragment = (message.get("fragment") or "").strip()
+
+    if body:
+        if _looks_like_html(body):
+            body = html_to_text(body)
+        if len(body) >= len(fragment):
+            return body
+    return fragment or body
+
+
+def message_needs_full_body(message: dict[str, Any]) -> bool:
+    """True when we should fetch full content from Zimbra before LLM analysis."""
+    return len(extract_message_text(message).strip()) < _MIN_READABLE_CHARS
 
 
 def normalize_subject(subject: str | None) -> str:
@@ -95,7 +145,7 @@ def build_thread_context(
     related_messages: list[dict[str, Any]] | None = None,
 ) -> dict[str, str]:
     """Build redacted current + history text for summarization."""
-    body = message.get("body") or message.get("fragment") or ""
+    body = extract_message_text(message)
     current_text, inline_history = split_reply_body(body)
 
     history_parts: list[str] = []
@@ -103,7 +153,7 @@ def build_thread_context(
         for item in related_messages:
             if str(item.get("id")) == str(message.get("id")):
                 continue
-            part_body = item.get("body") or item.get("fragment") or ""
+            part_body = extract_message_text(item)
             _, quoted = split_reply_body(part_body)
             snippet = part_body if not quoted else quoted
             if snippet.strip():
