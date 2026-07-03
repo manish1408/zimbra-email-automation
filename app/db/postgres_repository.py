@@ -8,9 +8,9 @@ from typing import Any
 import asyncpg
 
 from app.models.schemas import MessageDetail, MessageSummary
+from app.services.zimbra.soap import normalize_zimbra_date
 
-_SCHEMA = Path(__file__).resolve().parent / "migrations" / "001_initial.sql"
-_MIGRATION_V2 = Path(__file__).resolve().parent / "migrations" / "002_automation_fields.sql"
+_SCHEMA_DIR = Path(__file__).resolve().parent / "migrations"
 
 
 def _utc_now() -> datetime:
@@ -25,10 +25,8 @@ class PostgresEmailRepository:
 
     async def connect(self) -> asyncpg.Connection:
         conn = await asyncpg.connect(self.database_url)
-        if _SCHEMA.exists():
-            await conn.execute(_SCHEMA.read_text())
-        if _MIGRATION_V2.exists():
-            await conn.execute(_MIGRATION_V2.read_text())
+        for path in sorted(_SCHEMA_DIR.glob("*.sql")):
+            await conn.execute(path.read_text())
         return conn
 
     async def upsert_message(self, conn: asyncpg.Connection, message: MessageDetail) -> bool:
@@ -485,7 +483,7 @@ class PostgresEmailRepository:
             subject=row["subject"],
             from_address=row["from_address"],
             to_addresses=to_addresses,
-            date=row["date"],
+            date=normalize_zimbra_date(row["date"]),
             fragment=row["fragment"],
             folder=row["folder"],
             size=row["size"],

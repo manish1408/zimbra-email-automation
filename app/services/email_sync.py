@@ -251,7 +251,7 @@ class EmailSyncService:
         offset: int,
         response_class: type,
     ):
-        user = await self.get_user(user_email)
+        user = User(id="", email=user_email)
         token = await self.admin.delegate_auth(user_email)
         messages, has_more, total = await self.mail.search_messages(
             auth_token=token,

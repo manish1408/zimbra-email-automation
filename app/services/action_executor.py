@@ -3,14 +3,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from langchain_core.messages import HumanMessage
-
 from app.agents.state import MessageActionRecord, MessageClassification
 from app.config import Settings
 from app.db.email_repository import DbConnection, EmailRepository
 from app.services.acknowledgement import build_acknowledgement
 from app.services.email_sync import EmailSyncService
-from app.services.llm import create_chat_llm, llm_configured
 from app.services.routing import RoutingResolver
 
 logger = logging.getLogger(__name__)
@@ -30,15 +27,6 @@ class ActionExecutor:
         self.email_service = email_service
         self.repository = repository
         self.resolver = resolver
-        self._llm = None
-
-    @property
-    def llm(self):
-        if self._llm is None:
-            if not llm_configured(self.settings):
-                raise ValueError("LLM is not configured")
-            self._llm = create_chat_llm(self.settings, temperature=0.3)
-        return self._llm
 
     async def apply_all(
         self,
@@ -51,10 +39,12 @@ class ActionExecutor:
         automation_thread_id: str | None = None,
         report: dict[str, Any] | None = None,
         thread_summaries: dict[str, dict[str, Any]] | None = None,
+        draft_replies: dict[str, str] | None = None,
     ) -> tuple[list[MessageActionRecord], list[str]]:
         by_id = {str(m.get("id")): m for m in messages}
         actions: list[MessageActionRecord] = []
         errors: list[str] = []
+        drafts = draft_replies or {}
 
         for classification in classifications:
             msg_id = classification["message_id"]
@@ -77,6 +67,7 @@ class ActionExecutor:
                 automation_thread_id=automation_thread_id,
                 report=report,
                 thread_summary=(thread_summaries or {}).get(msg_id),
+                draft_reply_text=drafts.get(msg_id),
             )
             actions.append(record)
             if error:
@@ -94,6 +85,7 @@ class ActionExecutor:
         automation_thread_id: str | None = None,
         report: dict[str, Any] | None = None,
         thread_summary: dict[str, Any] | None = None,
+        draft_reply_text: str | None = None,
     ) -> tuple[MessageActionRecord, str | None]:
         msg_id = classification["message_id"]
         folder_name = self.resolver.folder_for_classification(classification)
@@ -126,8 +118,14 @@ class ActionExecutor:
                 record["ack_body_text"] = ack_body
 
             if self.resolver.should_draft_reply(classification):
-                draft_body = await self._generate_draft(message, classification)
-                record["draft_reply_text"] = draft_body
+                draft_body = draft_reply_text
+                if draft_body:
+                    record["draft_reply_text"] = draft_body
+                else:
+                    logger.warning(
+                        "Draft reply expected for %s but none was provided by analysis",
+                        msg_id,
+                    )
 
             if dry_run:
                 logger.info(
@@ -231,26 +229,6 @@ class ActionExecutor:
         await self.repository.update_message_folder(conn, account, msg_id, folder_name)
         logger.info("Moved message %s to folder %s", msg_id, folder_name)
         return True
-
-    async def _generate_draft(
-        self, message: dict[str, Any], classification: MessageClassification
-    ) -> str:
-        subject = message.get("subject") or ""
-        body_preview = (message.get("body") or message.get("fragment") or "")[:1500]
-        response = await self.llm.ainvoke(
-            [
-                HumanMessage(
-                    content=(
-                        f"Draft a professional customer support reply for GK Hair.\n"
-                        f"Category: {classification['category']}\n"
-                        f"Subject: {subject}\n"
-                        f"Email body:\n{body_preview}\n\n"
-                        "Output only the reply body text."
-                    )
-                )
-            ]
-        )
-        return str(response.content).strip()
 
 
 def _utc_now() -> str:

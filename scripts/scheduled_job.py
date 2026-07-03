@@ -51,6 +51,15 @@ async def run(args: argparse.Namespace) -> dict:
         settings.automation_dry_run = False
 
     pipeline = ScheduledPipeline(settings)
+    if args.full_mailbox:
+        account = args.account or settings.sync_target_email
+        if not account:
+            raise SystemExit("Set SYNC_TARGET_EMAIL or pass --account")
+        return await pipeline.run_full_mailbox_automation(
+            account,
+            query=args.query,
+            process_all=True,
+        )
     return await pipeline.run(skip_analysis=args.sync_only)
 
 
@@ -76,6 +85,16 @@ def main() -> None:
         "--live",
         action="store_true",
         help="Apply Zimbra folder moves and other actions (AUTOMATION_DRY_RUN=false)",
+    )
+    parser.add_argument(
+        "--full-mailbox",
+        action="store_true",
+        help="Sync all messages (is:anywhere) then process every unanalyzed message",
+    )
+    parser.add_argument(
+        "--query",
+        default="is:anywhere",
+        help="Zimbra search query for --full-mailbox (default: is:anywhere)",
     )
     parser.add_argument(
         "--interval-hours",

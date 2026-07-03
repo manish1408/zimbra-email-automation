@@ -12,6 +12,7 @@ import {
 import { FormsModule } from '@angular/forms';
 import { catchError, of } from 'rxjs';
 import { MessageAutomationResult, MessageSummary, ThreadSummary } from '../../../core/models/email.models';
+import { formatMailDate } from '../../../core/format-date';
 import { AutomationService } from '../../../core/services/automation.service';
 
 @Component({
@@ -172,9 +173,7 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
   }
 
   formatDate(value?: string | null): string {
-    if (!value) return '—';
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+    return formatMailDate(value);
   }
 
   confidencePercent(value: unknown): string {

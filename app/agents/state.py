@@ -68,6 +68,7 @@ class AgentState(TypedDict, total=False):
     enriched_messages: list[dict[str, Any]]
     classifications: list[MessageClassification]
     thread_summaries: list[ThreadSummaryRecord]
+    draft_replies: dict[str, str]
     actions_taken: list[MessageActionRecord]
     action_errors: list[str]
     report: dict[str, Any]

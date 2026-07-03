@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import asyncpg
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.agents.action_graph import build_action_graph
 from app.config import Settings
@@ -97,6 +96,66 @@ class ScheduledPipeline:
         """Classify unanalyzed messages and move them to category folders on Zimbra."""
         return await self._run_action_pipeline(conn, account)
 
+    async def run_full_mailbox_automation(
+        self,
+        account: str,
+        *,
+        query: str = "is:anywhere",
+        process_all: bool = True,
+    ) -> dict[str, Any]:
+        """Sync entire mailbox to DB, then run automation on all unanalyzed messages."""
+        conn = await self.repository.connect()
+        try:
+            logger.info("Full sync for %s (query=%s)", account, query)
+            sync_result = await self.email_service.sync_user_mailbox(
+                account,
+                query=query,
+                persist=True,
+            )
+            total = await self.repository.count_messages(conn, account)
+            unanalyzed = await self.repository.count_unanalyzed(conn, account)
+            result: dict[str, Any] = {
+                "account": account,
+                "sync": {
+                    "query": query,
+                    "fetched": sync_result.message_count,
+                    "total_in_db": total,
+                    "unanalyzed": unanalyzed,
+                },
+                "dry_run": self.settings.automation_dry_run,
+            }
+
+            if not llm_configured(self.settings):
+                result["analysis"] = {
+                    "skipped": True,
+                    "reason": llm_not_configured_message(self.settings),
+                }
+                return result
+
+            batches: list[dict[str, Any]] = []
+            while True:
+                stats = await self._run_action_pipeline(conn, account)
+                batches.append(stats)
+                if not process_all:
+                    result["analysis"] = stats
+                    break
+                if stats.get("skipped") or int(stats.get("message_count") or 0) == 0:
+                    break
+
+            if process_all:
+                remaining = await self.repository.count_unanalyzed(conn, account)
+                processed = await self.repository.count_messages(conn, account) - remaining
+                result["analysis"] = {
+                    "batches": len(batches),
+                    "batch_results": batches,
+                    "processed": processed,
+                    "remaining_unanalyzed": remaining,
+                    "dry_run": self.settings.automation_dry_run,
+                }
+            return result
+        finally:
+            await conn.close()
+
     async def _poll_and_sync(
         self, conn: asyncpg.Connection, account: str
     ) -> dict[str, Any]:
@@ -175,25 +234,20 @@ class ScheduledPipeline:
 
         logger.info("Running action pipeline on %d messages for %s", len(unanalyzed), account)
 
-        checkpoint_path = self.settings.agent_checkpoint_path
         thread_id = f"scheduled:{account}:{uuid.uuid4().hex[:8]}"
-
-        async with AsyncSqliteSaver.from_conn_string(checkpoint_path) as checkpointer:
-            await checkpointer.setup()
-            graph = build_action_graph(
-                email_service=self.email_service,
-                settings=self.settings,
-                checkpointer=checkpointer,
-                email_repository=self.repository,
-                resolver=self.resolver,
-            )
-            config = {"configurable": {"thread_id": thread_id}}
-            initial_state = {
-                "user_email": account,
-                "limit": limit,
-                "use_local_db": True,
-            }
-            result = await graph.ainvoke(initial_state, config=config)
+        graph = build_action_graph(
+            email_service=self.email_service,
+            settings=self.settings,
+            checkpointer=None,
+            email_repository=self.repository,
+            resolver=self.resolver,
+        )
+        initial_state = {
+            "user_email": account,
+            "limit": limit,
+            "use_local_db": True,
+        }
+        result = await graph.ainvoke(initial_state)
 
         report = result.get("report") or {}
         run_id = await self.repository.save_analysis_run(

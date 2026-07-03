@@ -4,8 +4,6 @@ import logging
 import uuid
 from typing import Any
 
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-
 from app.agents.action_graph import build_action_graph
 from app.config import Settings
 from app.db.email_repository import EmailRepository
@@ -146,39 +144,59 @@ class MessageAutomationService:
         if not llm_configured(self.settings):
             raise ValueError(llm_not_configured_message(self.settings))
 
-        thread_id = f"manual:{account}:{message_id}:{uuid.uuid4().hex[:8]}"
-        checkpoint_path = self.settings.agent_checkpoint_path
-
-        async with AsyncSqliteSaver.from_conn_string(checkpoint_path) as checkpointer:
-            await checkpointer.setup()
-            graph = build_action_graph(
-                email_service=self.email_service,
-                settings=self.settings,
-                checkpointer=checkpointer,
-                email_repository=self.repository,
-                resolver=self.resolver,
-            )
-            config = {"configurable": {"thread_id": thread_id}}
-            initial_state = {
-                "user_email": account,
-                "limit": 1,
-                "use_local_db": True,
-                "message_ids": [message_id],
-                "force_reprocess": force,
-                "automation_thread_id": thread_id,
-            }
+        if not force:
+            conn = await self.repository.connect()
             try:
-                result = await graph.ainvoke(initial_state, config=config)
-            except Exception as exc:
-                logger.exception("Automation pipeline failed for %s", message_id)
-                await self._persist_run(
-                    account,
-                    message_id,
-                    thread_id,
-                    status="failed",
-                    error=str(exc),
-                )
-                raise
+                if await self.repository.is_message_processed(conn, account, message_id):
+                    existing = await self.get_result(account, message_id)
+                    if existing:
+                        return MessageAutomationResult(
+                            account=existing.account,
+                            message_id=existing.message_id,
+                            thread_id=existing.thread_id,
+                            status="skipped",
+                            dry_run=existing.dry_run,
+                            classification=existing.classification,
+                            actions=existing.actions,
+                            draft_reply_text=existing.draft_reply_text,
+                            ack_body_text=existing.ack_body_text,
+                            thread_summary=existing.thread_summary,
+                            report=existing.report,
+                            error="Message already processed; use force=true to re-run",
+                            processed_at=existing.processed_at,
+                            runs=existing.runs,
+                        )
+            finally:
+                await conn.close()
+
+        thread_id = f"manual:{account}:{message_id}:{uuid.uuid4().hex[:8]}"
+        graph = build_action_graph(
+            email_service=self.email_service,
+            settings=self.settings,
+            checkpointer=None,
+            email_repository=self.repository,
+            resolver=self.resolver,
+        )
+        initial_state = {
+            "user_email": account,
+            "limit": 1,
+            "use_local_db": True,
+            "message_ids": [message_id],
+            "force_reprocess": force,
+            "automation_thread_id": thread_id,
+        }
+        try:
+            result = await graph.ainvoke(initial_state)
+        except Exception as exc:
+            logger.exception("Automation pipeline failed for %s", message_id)
+            await self._persist_run(
+                account,
+                message_id,
+                thread_id,
+                status="failed",
+                error=str(exc),
+            )
+            raise
 
         messages = result.get("messages") or []
         if not messages:

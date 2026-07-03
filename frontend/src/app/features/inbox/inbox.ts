@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
+import { formatMailDate } from '../../core/format-date';
 import {
   Folder,
   MailSource,
@@ -279,10 +280,34 @@ export class InboxComponent implements OnInit {
     return map[category ?? ''] ?? 'bg-light text-dark border';
   }
 
+  get messageCountLabel(): string {
+    if (this.total > 0) {
+      return `${this.total} messages`;
+    }
+    const shown = this.offset + this.messages.length;
+    if (this.hasMore && shown > 0) {
+      return `${shown}+ messages`;
+    }
+    return `${shown} messages`;
+  }
+
+  get paginationLabel(): string {
+    if (!this.messages.length) {
+      return '0 messages';
+    }
+    const start = this.offset + 1;
+    const end = this.offset + this.messages.length;
+    if (this.total > 0) {
+      return `${start}–${end} of ${this.total}`;
+    }
+    if (this.hasMore) {
+      return `${start}–${end} of many`;
+    }
+    return `${start}–${end} of ${end}`;
+  }
+
   formatDate(value?: string | null): string {
-    if (!value) return '—';
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+    return formatMailDate(value);
   }
 
   formatSize(bytes?: number | null): string {

@@ -2,32 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel, Field
-
-from app.agents.state import AgentState, EmailCategory, MessageClassification
+from app.agents.state import AgentState
 from app.config import Settings
 from app.db.email_repository import EmailRepository
 from app.services.action_executor import ActionExecutor
 from app.services.email_sync import EmailSyncService
-from app.services.llm import create_chat_llm, llm_configured, ainvoke_structured
+from app.services.llm import llm_configured
+from app.services.message_analysis import MessageAnalysisService
 from app.services.routing import RoutingResolver
-from app.services.thread_summary import ThreadSummaryService
-
-
-class EmailClassificationItem(BaseModel):
-    message_id: str
-    subject: str | None = None
-    category: EmailCategory
-    is_spam: bool = False
-    confidence: float = Field(ge=0.0, le=1.0, default=0.8)
-    requested_person: str | None = None
-    needs_live_agent: bool = False
-    reasoning: str
-
-
-class EmailClassificationBatch(BaseModel):
-    classifications: list[EmailClassificationItem]
 
 
 class ActionNodeContext:
@@ -42,15 +24,6 @@ class ActionNodeContext:
         self.settings = settings
         self.email_repository = email_repository
         self.resolver = resolver or RoutingResolver(settings, email_service)
-        self._llm = None
-
-    @property
-    def llm(self):
-        if self._llm is None:
-            if not llm_configured(self.settings):
-                raise ValueError("LLM is not configured")
-            self._llm = create_chat_llm(self.settings, temperature=0.1)
-        return self._llm
 
     @property
     def executor(self) -> ActionExecutor:
@@ -62,20 +35,6 @@ class ActionNodeContext:
             self.email_repository,
             self.resolver,
         )
-
-
-def _message_lines(messages: list[dict[str, Any]], include_body: bool = False) -> str:
-    lines: list[str] = []
-    for message in messages:
-        line = (
-            f"- id={message.get('id')} | from={message.get('from') or message.get('from_address')} | "
-            f"subject={message.get('subject')} | date={message.get('date')} | "
-            f"preview={str(message.get('fragment', ''))[:120]}"
-        )
-        if include_body and message.get("body"):
-            line += f" | body={str(message.get('body'))[:400]}"
-        lines.append(line)
-    return "\n".join(lines) if lines else "(no messages)"
 
 
 def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
@@ -98,6 +57,25 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             return detail.model_dump(by_alias=True)
         except Exception:
             return None
+
+    async def _load_cached_summaries(
+        account: str, message_ids: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        if not ctx.email_repository or not message_ids:
+            return {}
+        cached: dict[str, dict[str, Any]] = {}
+        conn = await ctx.email_repository.connect()
+        try:
+            for msg_id in message_ids:
+                action = await ctx.email_repository.get_message_action(
+                    conn, account, msg_id
+                )
+                summary = action.get("thread_summary") if action else None
+                if summary and isinstance(summary, dict):
+                    cached[msg_id] = summary
+        finally:
+            await conn.close()
+        return cached
 
     async def ingest_mailbox(state: AgentState) -> dict:
         user_email = state["user_email"]
@@ -167,18 +145,26 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
 
         return {"enriched_messages": enriched, "current_node": "enrich_messages"}
 
-    async def summarize_thread(state: AgentState) -> dict:
+    async def analyze_messages(state: AgentState) -> dict:
         user_email = state["user_email"]
         messages = state.get("enriched_messages") or state.get("messages") or []
         if not messages or not llm_configured(ctx.settings):
-            return {"thread_summaries": [], "current_node": "summarize_thread"}
+            return {
+                "classifications": [],
+                "thread_summaries": [],
+                "draft_replies": {},
+                "current_node": "analyze_messages",
+            }
 
-        summarizer = ThreadSummaryService(ctx.settings)
-        summaries: list[dict[str, Any]] = []
+        msg_ids = [str(m.get("id", "")) for m in messages]
+        cached_summaries = await _load_cached_summaries(user_email, msg_ids)
 
+        related_by_id: dict[str, list[dict[str, Any]]] = {}
         for message in messages:
             msg_id = str(message.get("id", ""))
-            related: list[dict[str, Any]] = []
+            if cached_summaries.get(msg_id):
+                related_by_id[msg_id] = []
+                continue
             try:
                 thread_messages = await ctx.email_service.search_thread_messages(
                     user_email,
@@ -186,86 +172,41 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                     exclude_id=msg_id,
                     limit=4,
                 )
-                related = [item.model_dump(by_alias=True) for item in thread_messages]
+                related_by_id[msg_id] = [
+                    item.model_dump(by_alias=True) for item in thread_messages
+                ]
             except Exception:
-                related = []
+                related_by_id[msg_id] = []
 
-            try:
-                summary = await summarizer.summarize(message, related)
-                summaries.append(summary)
-            except Exception as exc:
+        try:
+            classifications, summaries, drafts = await MessageAnalysisService(
+                ctx.settings
+            ).analyze_batch(
+                messages,
+                related_by_id=related_by_id,
+                cached_summaries=cached_summaries,
+            )
+        except Exception as exc:
+            classifications = []
+            summaries = []
+            drafts = {}
+            for message in messages:
+                msg_id = str(message.get("id", ""))
                 summaries.append(
                     {
                         "message_id": msg_id,
                         "history_points": [],
-                        "current_points": [f"Could not summarize thread: {exc}"],
+                        "current_points": [f"Analysis failed: {exc}"],
                         "focus": "",
                     }
                 )
 
-        return {"thread_summaries": summaries, "current_node": "summarize_thread"}
-
-    async def classify_emails(state: AgentState) -> dict:
-        messages = state.get("enriched_messages") or state.get("messages") or []
-        prompt = (
-            "Classify each email for GK Hair automation.\n"
-            "Categories: spam, marketing, logistics, billing, careers, orders, "
-            "person_request, customer_support, enquiry, general.\n\n"
-            "CRITICAL spam rules — mark is_spam=true and category=spam for:\n"
-            "- Phishing, fake invoices, payment scams\n"
-            "- Promotional logistics/shipping offers disguised as real shipments\n"
-            "- Unsolicited sales pitches for billing/finance services\n"
-            "- Bulk newsletters and marketing blasts\n\n"
-            "person_request: sender asks to reach a specific person by name.\n"
-            "needs_live_agent: true when a human must respond (complex support, complaints).\n\n"
-            f"Emails:\n{_message_lines(messages, include_body=True)}"
-        )
-        result: EmailClassificationBatch = await ainvoke_structured(
-            ctx.llm,
-            EmailClassificationBatch,
-            [
-                SystemMessage(
-                    content=(
-                        "You are an email classifier for GK Hair. "
-                        "Never route fake invoices or promotional spam as billing or logistics. "
-                        "Extract requested_person name for person_request emails."
-                    )
-                ),
-                HumanMessage(content=prompt),
-            ],
-        )
-        classifications: list[MessageClassification] = []
-        for item in result.classifications:
-            row = MessageClassification(
-                message_id=item.message_id,
-                subject=item.subject,
-                category=item.category,
-                is_spam=item.is_spam,
-                confidence=item.confidence,
-                requested_person=item.requested_person,
-                needs_live_agent=item.needs_live_agent,
-                reasoning=item.reasoning,
-                route_target=None,
-            )
-            classifications.append(row)
-
-        if not classifications and messages:
-            for message in messages:
-                classifications.append(
-                    MessageClassification(
-                        message_id=str(message.get("id", "")),
-                        subject=message.get("subject"),
-                        category="general",
-                        is_spam=False,
-                        confidence=0.5,
-                        requested_person=None,
-                        needs_live_agent=False,
-                        reasoning="Default when model returned no items.",
-                        route_target=None,
-                    )
-                )
-
-        return {"classifications": classifications, "current_node": "classify_emails"}
+        return {
+            "classifications": classifications,
+            "thread_summaries": summaries,
+            "draft_replies": drafts,
+            "current_node": "analyze_messages",
+        }
 
     async def resolve_routes(state: AgentState) -> dict:
         account = state["user_email"]
@@ -300,6 +241,7 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 automation_thread_id=state.get("automation_thread_id"),
                 report=state.get("report"),
                 thread_summaries=summaries_by_id,
+                draft_replies=state.get("draft_replies") or {},
             )
             zimbra_ids = [c["message_id"] for c in classifications]
             await ctx.email_repository.mark_analyzed(conn, account, zimbra_ids)
@@ -345,8 +287,7 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
     return {
         "ingest_mailbox": ingest_mailbox,
         "enrich_messages": enrich_messages,
-        "summarize_thread": summarize_thread,
-        "classify_emails": classify_emails,
+        "analyze_messages": analyze_messages,
         "resolve_routes": resolve_routes,
         "apply_actions": apply_actions,
         "format_run_report": format_run_report,

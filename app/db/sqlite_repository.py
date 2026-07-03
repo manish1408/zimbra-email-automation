@@ -8,6 +8,7 @@ from typing import Any
 import aiosqlite
 
 from app.models.schemas import MessageDetail, MessageSummary
+from app.services.zimbra.soap import normalize_zimbra_date
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -627,7 +628,7 @@ class SqliteEmailRepository:
             subject=row["subject"],
             from_address=row["from_address"],
             to_addresses=to_addresses,
-            date=row["date"],
+            date=normalize_zimbra_date(row["date"]),
             fragment=row["fragment"],
             folder=row["folder"],
             size=row["size"],

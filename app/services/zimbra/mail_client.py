@@ -15,6 +15,7 @@ from app.services.zimbra.soap import (
     find_by_local_name,
     find_text,
     local_name,
+    normalize_zimbra_date,
     parse_response,
 )
 
@@ -112,6 +113,12 @@ class ZimbraMailClient:
             if not msg_id:
                 continue
             messages.append(self._parse_message_hit(hit, account_name=account_name))
+
+        if total == 0:
+            if more:
+                total = -1
+            else:
+                total = offset + len(messages)
         return messages, more, total
 
     async def get_message(
@@ -196,7 +203,7 @@ class ZimbraMailClient:
     def _parse_message_hit(self, node, account_name: str) -> ZimbraMessage:
         subject = find_text(node, "su")
         fragment = find_text(node, "fr")
-        date = find_text(node, "d") or node.attrib.get("d")
+        date = normalize_zimbra_date(find_text(node, "d") or node.attrib.get("d"))
         folder = node.attrib.get("l")
         size_text = node.attrib.get("s")
         size = int(size_text) if size_text and size_text.isdigit() else None

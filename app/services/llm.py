@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+import time
 from typing import Any, TypeVar
 
 import httpx
@@ -14,6 +16,9 @@ from pydantic import BaseModel
 from app.config import Settings
 
 T = TypeVar("T", bound=BaseModel)
+
+_RETRYABLE_HTTP_STATUS = frozenset({502, 503, 524})
+_MAX_LLM_ATTEMPTS = 3
 
 
 def _messages_to_prompt(messages: list[BaseMessage]) -> str:
@@ -116,14 +121,27 @@ class VastAIChatModel(BaseChatModel):
             "stream": False,
             "options": {"temperature": self.temperature},
         }
-        with httpx.Client(timeout=self.timeout_seconds) as client:
-            response = client.post(
-                self._build_url(),
-                headers=self._build_headers(),
-                json=body,
-            )
-            response.raise_for_status()
-            return self._parse_response(response.json())
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_LLM_ATTEMPTS):
+            try:
+                with httpx.Client(timeout=self.timeout_seconds) as client:
+                    response = client.post(
+                        self._build_url(),
+                        headers=self._build_headers(),
+                        json=body,
+                    )
+                    response.raise_for_status()
+                    return self._parse_response(response.json())
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+                if (
+                    exc.response.status_code in _RETRYABLE_HTTP_STATUS
+                    and attempt < _MAX_LLM_ATTEMPTS - 1
+                ):
+                    time.sleep(2**attempt)
+                    continue
+                raise
+        raise last_exc or RuntimeError("Vast AI request failed")
 
     async def _call_async(self, prompt: str) -> str:
         body = {
@@ -132,14 +150,27 @@ class VastAIChatModel(BaseChatModel):
             "stream": False,
             "options": {"temperature": self.temperature},
         }
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            response = await client.post(
-                self._build_url(),
-                headers=self._build_headers(),
-                json=body,
-            )
-            response.raise_for_status()
-            return self._parse_response(response.json())
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_LLM_ATTEMPTS):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                    response = await client.post(
+                        self._build_url(),
+                        headers=self._build_headers(),
+                        json=body,
+                    )
+                    response.raise_for_status()
+                    return self._parse_response(response.json())
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+                if (
+                    exc.response.status_code in _RETRYABLE_HTTP_STATUS
+                    and attempt < _MAX_LLM_ATTEMPTS - 1
+                ):
+                    await asyncio.sleep(2**attempt)
+                    continue
+                raise
+        raise last_exc or RuntimeError("Vast AI request failed")
 
     def _generate(
         self,

@@ -23,6 +23,21 @@ def escape_xml(text: str) -> str:
     )
 
 
+def normalize_zimbra_date(raw: str | None) -> str | None:
+    """Convert Zimbra epoch-ms (or seconds) strings to ISO-8601 UTC."""
+    if not raw:
+        return None
+    value = raw.strip()
+    if not value.isdigit():
+        return value
+    ms = int(value)
+    if len(value) <= 10:
+        ms *= 1000
+    from datetime import UTC, datetime
+
+    return datetime.fromtimestamp(ms / 1000, tz=UTC).isoformat()
+
+
 def build_envelope(
     body_xml: str,
     auth_token: str | None = None,
