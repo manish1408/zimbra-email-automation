@@ -13,9 +13,8 @@ from app.models.schemas import (
     ThreadSummaryResponse,
 )
 from app.services.email_sync import EmailSyncService
-from app.services.agent_training import load_training
+from app.services.agent_training import load_general_rules
 from app.services.llm import llm_configured, llm_not_configured_message
-from app.services.routing import RoutingResolver
 from app.services.scheduled_pipeline import ScheduledPipeline
 from app.services.thread_summary import ThreadSummaryService
 
@@ -61,6 +60,10 @@ def _run_summary(run: dict[str, Any]) -> MessageAutomationRunSummary:
     )
 
 
+def _automation_completed(action: dict[str, Any] | None) -> bool:
+    return bool(action and action.get("classification"))
+
+
 def _result_from_db(
     account: str,
     message_id: str,
@@ -79,6 +82,7 @@ def _result_from_db(
     ack_body_text = None
     thread_summary = None
     processed_at = None
+    latest_run = runs[0] if runs else None
 
     if action:
         classification = action.get("classification")
@@ -96,8 +100,22 @@ def _result_from_db(
         thread_id = thread_id or action.get("automation_thread_id")
         report = report or action.get("report")
         error = error or action.get("error")
-        if not status:
+        if not status and _automation_completed(action):
             status = "failed" if action.get("error") else "completed"
+
+    if latest_run:
+        if not classification:
+            classification = latest_run.get("classification")
+        if not actions:
+            actions = latest_run.get("actions")
+        if not draft_reply_text:
+            draft_reply_text = latest_run.get("draft_reply_text")
+        if not ack_body_text:
+            ack_body_text = latest_run.get("ack_body_text")
+        if not status:
+            status = latest_run.get("status") or "completed"
+        if not thread_id:
+            thread_id = latest_run.get("thread_id")
 
     if runs and not thread_id:
         thread_id = runs[0].get("thread_id")
@@ -128,12 +146,10 @@ class MessageAutomationService:
         settings: Settings,
         email_service: EmailSyncService | None = None,
         repository: EmailRepository | None = None,
-        resolver: RoutingResolver | None = None,
     ):
         self.settings = settings
         self.email_service = email_service or EmailSyncService(settings)
         self.repository = repository or EmailRepository(settings.database_url)
-        self.resolver = resolver or RoutingResolver(settings, self.email_service)
 
     async def run_for_message(
         self,
@@ -185,7 +201,6 @@ class MessageAutomationService:
                 email_service=self.email_service,
                 settings=self.settings,
                 email_repository=self.repository,
-                resolver=self.resolver,
             )
         except Exception as exc:
             logger.exception("Automation pipeline failed for %s", message_id)
@@ -286,6 +301,12 @@ class MessageAutomationService:
         finally:
             await conn.close()
 
+        if not refresh:
+            raise LookupError(
+                f"No cached thread summary for message {message_id}; "
+                "run automation or pass refresh=true to generate one"
+            )
+
         message = await self._load_message_dict(account, message_id)
         if not message:
             raise LookupError(f"Message {message_id} not found for {account}")
@@ -302,7 +323,7 @@ class MessageAutomationService:
         except Exception:
             related = []
 
-        training = await load_training(self.repository)
+        training = await load_general_rules(self.repository)
         summary = await ThreadSummaryService(self.settings).summarize(
             message, related, agent_training=training
         )
@@ -365,7 +386,7 @@ class MessageAutomationService:
         finally:
             await conn.close()
 
-        if not action and not runs:
+        if not _automation_completed(action) and not runs:
             return None
 
         dry_run = self.settings.automation_dry_run
@@ -441,7 +462,6 @@ class MessageAutomationService:
                 self.settings,
                 self.email_service,
                 self.repository,
-                self.resolver,
             )
             return await pipeline.run_action_pipeline(conn, account)
         finally:

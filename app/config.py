@@ -50,8 +50,6 @@ class Settings(BaseSettings):
     automation_dry_run: bool = True
     automation_move_to_folders: bool = True
     auto_send_ack: bool = True
-    routing_rules_path: str = "config/routing_rules.yaml"
-    employees_path: str = "config/employees.yaml"
 
     @property
     def scheme(self) -> str:

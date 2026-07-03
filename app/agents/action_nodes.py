@@ -23,7 +23,9 @@ class ActionNodeContext:
         self.email_service = email_service
         self.settings = settings
         self.email_repository = email_repository
-        self.resolver = resolver or RoutingResolver(settings, email_service)
+        self.resolver = resolver
+        if resolver is None:
+            raise ValueError("RoutingResolver with classification rules is required")
 
     @property
     def executor(self) -> ActionExecutor:
@@ -156,6 +158,10 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 "current_node": "analyze_messages",
             }
 
+        rules = state.get("classification_rules")
+        if not rules:
+            raise ValueError("Classification rules are not loaded")
+
         msg_ids = [str(m.get("id", "")) for m in messages]
         cached_summaries = await _load_cached_summaries(user_email, msg_ids)
 
@@ -183,9 +189,11 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 ctx.settings
             ).analyze_batch(
                 messages,
+                classification_rules=state["classification_rules"],
                 related_by_id=related_by_id,
                 cached_summaries=cached_summaries,
                 agent_training=state.get("agent_training"),
+                draft_reply_rules=state.get("draft_reply_rules"),
             )
         except Exception as exc:
             classifications = []

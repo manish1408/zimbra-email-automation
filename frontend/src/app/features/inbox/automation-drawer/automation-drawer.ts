@@ -14,6 +14,7 @@ import { catchError, of } from 'rxjs';
 import { MessageAutomationResult, MessageSummary, ThreadSummary } from '../../../core/models/email.models';
 import { formatMailDate } from '../../../core/format-date';
 import { AutomationService } from '../../../core/services/automation.service';
+import { LocalDataService } from '../../../core/services/local-data.service';
 
 @Component({
   selector: 'app-automation-drawer',
@@ -24,6 +25,7 @@ import { AutomationService } from '../../../core/services/automation.service';
 })
 export class AutomationDrawerComponent implements OnChanges, OnDestroy {
   private readonly automationService = inject(AutomationService);
+  private readonly localDataService = inject(LocalDataService);
   private readonly document = inject(DOCUMENT);
 
   @Input() account = '';
@@ -35,7 +37,6 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
   result: MessageAutomationResult | null = null;
   threadSummary: ThreadSummary | null = null;
   loading = false;
-  summaryLoading = false;
   running = false;
   loadError = '';
   forceRerun = false;
@@ -46,8 +47,7 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
       this.setBodyScrollLock(this.open);
     }
     if ((changes['open'] || changes['message']) && this.open && this.message && this.account) {
-      this.loadResult();
-      this.loadThreadSummary();
+      this.loadExistingResults();
     }
     if (changes['open'] && !this.open) {
       this.result = null;
@@ -92,10 +92,12 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
     });
   }
 
-  loadResult(): void {
+  /** Load cached automation data only — never triggers a pipeline run. */
+  loadExistingResults(): void {
     if (!this.account || !this.message) return;
     this.loading = true;
     this.loadError = '';
+    this.threadSummary = null;
     this.automationService
       .getResult(this.account, this.message.id)
       .pipe(catchError(() => of(null)))
@@ -104,6 +106,9 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
           this.result = res;
           this.loading = false;
           this.applyThreadSummaryFromResult(res);
+          if (!this.threadSummary) {
+            this.loadCachedThreadSummary();
+          }
         },
         error: () => {
           this.loading = false;
@@ -111,22 +116,25 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
       });
   }
 
-  loadThreadSummary(): void {
-    if (!this.account || !this.message) return;
-    this.summaryLoading = true;
-    this.automationService
-      .getThreadSummary(this.account, this.message.id)
+  private loadCachedThreadSummary(): void {
+    if (!this.account || !this.message || this.threadSummary) return;
+    this.localDataService
+      .getMetadata(this.account, this.message.id)
       .pipe(catchError(() => of(null)))
-      .subscribe({
-        next: (summary) => {
-          if (summary) {
-            this.threadSummary = summary;
-          }
-          this.summaryLoading = false;
-        },
-        error: () => {
-          this.summaryLoading = false;
-        },
+      .subscribe((meta) => {
+        if (!meta?.thread_summary || typeof meta.thread_summary !== 'object') return;
+        const summary = meta.thread_summary as Record<string, unknown>;
+        this.threadSummary = {
+          account: meta.account,
+          message_id: meta.zimbra_id,
+          history_points: Array.isArray(summary['history_points'])
+            ? (summary['history_points'] as string[])
+            : [],
+          current_points: Array.isArray(summary['current_points'])
+            ? (summary['current_points'] as string[])
+            : [],
+          focus: typeof summary['focus'] === 'string' ? summary['focus'] : '',
+        };
       });
   }
 
@@ -155,6 +163,22 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
         }
       },
     });
+  }
+
+  draftReplyText(): string | null {
+    if (this.result?.draft_reply_text) {
+      return this.result.draft_reply_text;
+    }
+    const runWithDraft = this.result?.runs?.find((run) => run.draft_reply_text);
+    return runWithDraft?.draft_reply_text ?? null;
+  }
+
+  ackBodyText(): string | null {
+    if (this.result?.ack_body_text) {
+      return this.result.ack_body_text;
+    }
+    const runWithAck = this.result?.runs?.find((run) => run.ack_body_text);
+    return runWithAck?.ack_body_text ?? null;
   }
 
   categoryClass(category?: string | null): string {

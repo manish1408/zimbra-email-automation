@@ -1,0 +1,221 @@
+<div class="container py-4 agent-training-page">
+  <h1 class="h3 mb-2">Agent Training</h1>
+  <p class="text-muted mb-4">
+    Three rule sets applied on every automation run: general behavior, classification/routing, and draft replies.
+  </p>
+
+  <!-- Box 1: General rules -->
+  <div class="card shadow-sm training-box mb-4">
+    <div class="card-header fw-semibold">General rules</div>
+    <div class="card-body">
+      <p class="small text-muted mb-3">
+        Organization-wide instructions for thread summaries and overall agent behavior.
+      </p>
+      <textarea
+        id="generalRules"
+        class="form-control font-monospace training-textarea"
+        rows="8"
+        [(ngModel)]="generalRules"
+        [disabled]="trainingLoading || generalSaving"
+        placeholder="Example: Always use a formal tone. Reference order numbers when mentioned."
+      ></textarea>
+      <div class="d-flex flex-wrap align-items-center gap-3 mt-3">
+        <button
+          class="btn btn-primary"
+          [disabled]="trainingLoading || generalSaving || !generalDirty"
+          (click)="saveGeneralRules()"
+        >
+          {{ generalSaving ? 'Saving…' : 'Save general rules' }}
+        </button>
+        <span class="small text-muted">{{ generalRules.length }} / {{ maxLength }}</span>
+      </div>
+      @if (trainingLoading) {
+        <div class="mt-2 text-muted small">Loading…</div>
+      }
+    </div>
+  </div>
+
+  <!-- Box 2: Classification rules -->
+  <div class="card shadow-sm training-box mb-4">
+    <div class="card-header fw-semibold">Classification rules</div>
+    <div class="card-body">
+      @if (rules) {
+        <p class="small text-muted mb-3">
+          Categories, folder moves, forwarding, spam handling, and employee routing.
+        </p>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">
+            <label class="form-label">Spam folder</label>
+            <input class="form-control" [(ngModel)]="rules.config.spam_folder" [disabled]="rulesLoading || rulesSaving" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Default forward email</label>
+            <input class="form-control" [(ngModel)]="rules.config.default_forward" [disabled]="rulesLoading || rulesSaving" />
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Classification instructions</label>
+          <textarea
+            class="form-control font-monospace"
+            rows="5"
+            [(ngModel)]="rules.config.classification_instructions"
+            [disabled]="rulesLoading || rulesSaving"
+          ></textarea>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label">Acknowledgement template</label>
+          <p class="small text-muted mb-1">
+            Placeholders:
+            <code>{{ '{' }}customer_name{{ '}' }}</code>,
+            <code>{{ '{' }}category{{ '}' }}</code>,
+            <code>{{ '{' }}reference_subject{{ '}' }}</code>
+          </p>
+          <textarea
+            class="form-control font-monospace"
+            rows="5"
+            [(ngModel)]="rules.config.ack_template"
+            [disabled]="rulesLoading || rulesSaving"
+          ></textarea>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h2 class="h6 mb-0">Categories</h2>
+          <button type="button" class="btn btn-sm btn-outline-primary" (click)="addCategory()" [disabled]="rulesSaving">
+            Add category
+          </button>
+        </div>
+        <div class="table-responsive mb-4">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Slug</th>
+                <th>Name</th>
+                <th>Hints</th>
+                <th>Folder</th>
+                <th>Forward to</th>
+                <th class="text-center">Flags</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (category of rules.categories; track $index) {
+                <tr>
+                  <td><input class="form-control form-control-sm" [(ngModel)]="category.slug" [disabled]="rulesSaving" /></td>
+                  <td><input class="form-control form-control-sm" [(ngModel)]="category.display_name" [disabled]="rulesSaving" /></td>
+                  <td style="min-width: 200px">
+                    <textarea class="form-control form-control-sm" rows="2" [(ngModel)]="category.classification_hints" [disabled]="rulesSaving"></textarea>
+                  </td>
+                  <td><input class="form-control form-control-sm" [(ngModel)]="category.folder" [disabled]="rulesSaving" /></td>
+                  <td><input class="form-control form-control-sm" [(ngModel)]="category.forward_to" [disabled]="rulesSaving" placeholder="optional" /></td>
+                  <td class="text-center">
+                    <div class="d-flex flex-column gap-1 small">
+                      <label class="form-check-label"><input type="checkbox" class="form-check-input me-1" [(ngModel)]="category.enabled" [disabled]="rulesSaving" />Enabled</label>
+                      <label class="form-check-label"><input type="checkbox" class="form-check-input me-1" [(ngModel)]="category.is_spam" [disabled]="rulesSaving" />Spam</label>
+                      <label class="form-check-label"><input type="checkbox" class="form-check-input me-1" [(ngModel)]="category.skip_forward" [disabled]="rulesSaving" />No forward</label>
+                      <label class="form-check-label"><input type="checkbox" class="form-check-input me-1" [(ngModel)]="category.route_by_person" [disabled]="rulesSaving" />Person route</label>
+                      <label class="form-check-label"><input type="checkbox" class="form-check-input me-1" [(ngModel)]="category.send_ack" [disabled]="rulesSaving" />Send ack</label>
+                      <label class="form-check-label"><input type="checkbox" class="form-check-input me-1" [(ngModel)]="category.needs_live_agent" [disabled]="rulesSaving" />Live agent</label>
+                    </div>
+                  </td>
+                  <td>
+                    <button type="button" class="btn btn-sm btn-outline-danger" (click)="removeCategory($index)" [disabled]="rulesSaving">Remove</button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h2 class="h6 mb-0">Employee routing</h2>
+          <button type="button" class="btn btn-sm btn-outline-primary" (click)="addEmployee()" [disabled]="rulesSaving">
+            Add employee
+          </button>
+        </div>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Aliases (comma-separated)</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (employee of rules.employees; track $index) {
+                <tr>
+                  <td><input class="form-control form-control-sm" [(ngModel)]="employee.name" [disabled]="rulesSaving" /></td>
+                  <td><input class="form-control form-control-sm" [(ngModel)]="employee.email" [disabled]="rulesSaving" /></td>
+                  <td>
+                    <input
+                      class="form-control form-control-sm"
+                      [ngModel]="aliasesText(employee)"
+                      (ngModelChange)="setAliases(employee, $event)"
+                      [disabled]="rulesSaving"
+                    />
+                  </td>
+                  <td>
+                    <button type="button" class="btn btn-sm btn-outline-danger" (click)="removeEmployee($index)" [disabled]="rulesSaving">Remove</button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-3">
+          <button class="btn btn-primary" [disabled]="rulesLoading || rulesSaving || !rulesDirty" (click)="saveRules()">
+            {{ rulesSaving ? 'Saving…' : 'Save classification rules' }}
+          </button>
+          @if (rulesUpdatedAt) {
+            <span class="small text-muted">Last saved {{ rulesUpdatedAt | date: 'medium' }}</span>
+          }
+        </div>
+      } @else if (rulesLoading) {
+        <div class="text-muted">Loading classification rules…</div>
+      }
+    </div>
+  </div>
+
+  <!-- Box 3: Draft reply rules -->
+  <div class="card shadow-sm training-box mb-4">
+    <div class="card-header fw-semibold">Draft reply rules</div>
+    <div class="card-body">
+      <p class="small text-muted mb-3">
+        Instructions for generating draft support replies when a live agent is needed.
+      </p>
+      <textarea
+        id="draftReplyRules"
+        class="form-control font-monospace training-textarea"
+        rows="8"
+        [(ngModel)]="draftReplyRules"
+        [disabled]="trainingLoading || draftSaving"
+        placeholder="Example: Keep replies under 150 words. Sign off as Customer Support. Never promise refunds without manager approval."
+      ></textarea>
+      <div class="d-flex flex-wrap align-items-center gap-3 mt-3">
+        <button
+          class="btn btn-primary"
+          [disabled]="trainingLoading || draftSaving || !draftDirty"
+          (click)="saveDraftReplyRules()"
+        >
+          {{ draftSaving ? 'Saving…' : 'Save draft reply rules' }}
+        </button>
+        <span class="small text-muted">{{ draftReplyRules.length }} / {{ maxLength }}</span>
+        @if (trainingUpdatedAt) {
+          <span class="small text-muted">Last saved {{ trainingUpdatedAt | date: 'medium' }}</span>
+        }
+      </div>
+    </div>
+  </div>
+
+  @if (error) {
+    <div class="alert alert-danger mb-0">{{ error }}</div>
+  }
+  @if (successMessage) {
+    <div class="alert alert-success mb-0">{{ successMessage }}</div>
+  }
+</div>

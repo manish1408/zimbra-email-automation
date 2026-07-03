@@ -7,7 +7,6 @@ from app.models.schemas import AccountSyncResult, MailboxAutomationRunResponse, 
 from app.services.email_sync import EmailSyncService
 from app.services.llm import llm_configured, llm_not_configured_message
 from app.services.message_automation import MessageAutomationService
-from app.services.routing import RoutingResolver
 
 router = APIRouter(prefix="/sync", tags=["Sync"])
 
@@ -17,8 +16,7 @@ def _automation_service(
     email_service: EmailSyncService,
     repository: EmailRepository,
 ) -> MessageAutomationService:
-    resolver = RoutingResolver(config, email_service)
-    return MessageAutomationService(config, email_service, repository, resolver)
+    return MessageAutomationService(config, email_service, repository)
 
 
 @router.post(

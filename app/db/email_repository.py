@@ -44,4 +44,16 @@ class EmailRepository:
         return await self._backend.get_agent_training()
 
     async def upsert_agent_training(self, content: str) -> dict[str, Any]:
-        return await self._backend.upsert_agent_training(content)
+        return await self._backend.upsert_agent_general_rules(content)
+
+    async def upsert_agent_general_rules(self, general_rules: str) -> dict[str, Any]:
+        return await self._backend.upsert_agent_general_rules(general_rules)
+
+    async def upsert_agent_draft_reply_rules(self, draft_reply_rules: str) -> dict[str, Any]:
+        return await self._backend.upsert_agent_draft_reply_rules(draft_reply_rules)
+
+    async def get_classification_rules(self) -> dict[str, Any]:
+        return await self._backend.get_classification_rules()
+
+    async def save_classification_rules(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._backend.save_classification_rules(payload)

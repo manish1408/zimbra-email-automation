@@ -223,7 +223,9 @@ class PostgresEmailRepository:
         row = await conn.fetchval(
             """
             SELECT 1 FROM message_actions
-            WHERE account = $1 AND zimbra_id = $2 AND error IS NULL
+            WHERE account = $1 AND zimbra_id = $2
+              AND error IS NULL
+              AND classification_json IS NOT NULL
             """,
             account,
             zimbra_id,
@@ -313,17 +315,15 @@ class PostgresEmailRepository:
         zimbra_id: str,
         thread_summary: dict[str, Any],
     ) -> None:
-        now = _utc_now()
         await conn.execute(
             """
-            INSERT INTO message_actions (zimbra_id, account, processed_at, thread_summary_json)
-            VALUES ($1, $2, $3, $4::jsonb)
+            INSERT INTO message_actions (zimbra_id, account, thread_summary_json)
+            VALUES ($1, $2, $3::jsonb)
             ON CONFLICT (zimbra_id, account) DO UPDATE SET
                 thread_summary_json = EXCLUDED.thread_summary_json
             """,
             zimbra_id,
             account,
-            now,
             json.dumps(thread_summary),
         )
 
@@ -572,19 +572,27 @@ class PostgresEmailRepository:
         conn = await self.connect()
         try:
             row = await conn.fetchrow(
-                "SELECT content, updated_at FROM agent_training WHERE id = 1"
+                """
+                SELECT content, draft_reply_content, updated_at
+                FROM agent_training WHERE id = 1
+                """
             )
             if not row:
-                return {"content": "", "updated_at": None}
+                return {
+                    "general_rules": "",
+                    "draft_reply_rules": "",
+                    "updated_at": None,
+                }
             updated_at = row["updated_at"]
             return {
-                "content": row["content"] or "",
+                "general_rules": row["content"] or "",
+                "draft_reply_rules": row["draft_reply_content"] or "",
                 "updated_at": updated_at.isoformat() if updated_at else None,
             }
         finally:
             await conn.close()
 
-    async def upsert_agent_training(self, content: str) -> dict[str, Any]:
+    async def upsert_agent_general_rules(self, general_rules: str) -> dict[str, Any]:
         now = _utc_now()
         conn = await self.connect()
         try:
@@ -594,15 +602,193 @@ class PostgresEmailRepository:
                 VALUES (1, $1, $2)
                 ON CONFLICT (id) DO UPDATE
                 SET content = EXCLUDED.content, updated_at = EXCLUDED.updated_at
-                RETURNING content, updated_at
+                RETURNING content, draft_reply_content, updated_at
                 """,
-                content,
+                general_rules,
                 now,
             )
             updated_at = row["updated_at"]
             return {
-                "content": row["content"] or "",
+                "general_rules": row["content"] or "",
+                "draft_reply_rules": row["draft_reply_content"] or "",
                 "updated_at": updated_at.isoformat() if updated_at else None,
             }
         finally:
             await conn.close()
+
+    async def upsert_agent_draft_reply_rules(self, draft_reply_rules: str) -> dict[str, Any]:
+        now = _utc_now()
+        conn = await self.connect()
+        try:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO agent_training (id, draft_reply_content, updated_at)
+                VALUES (1, $1, $2)
+                ON CONFLICT (id) DO UPDATE
+                SET draft_reply_content = EXCLUDED.draft_reply_content,
+                    updated_at = EXCLUDED.updated_at
+                RETURNING content, draft_reply_content, updated_at
+                """,
+                draft_reply_rules,
+                now,
+            )
+            updated_at = row["updated_at"]
+            return {
+                "general_rules": row["content"] or "",
+                "draft_reply_rules": row["draft_reply_content"] or "",
+                "updated_at": updated_at.isoformat() if updated_at else None,
+            }
+        finally:
+            await conn.close()
+
+    async def get_classification_rules(self) -> dict[str, Any]:
+        conn = await self.connect()
+        try:
+            config_row = await conn.fetchrow(
+                """
+                SELECT spam_folder, default_forward, ack_template,
+                       classification_instructions, updated_at
+                FROM classification_config WHERE id = 1
+                """
+            )
+            category_rows = await conn.fetch(
+                """
+                SELECT slug, display_name, classification_hints, folder, forward_to,
+                       send_ack, needs_live_agent, is_spam, route_by_person,
+                       skip_forward, sort_order, enabled
+                FROM classification_categories
+                ORDER BY sort_order, slug
+                """
+            )
+            employee_rows = await conn.fetch(
+                """
+                SELECT id, name, email, aliases
+                FROM classification_employees
+                ORDER BY name
+                """
+            )
+        finally:
+            await conn.close()
+
+        if not config_row:
+            return {
+                "config": {
+                    "spam_folder": "Junk",
+                    "default_forward": None,
+                    "ack_template": "",
+                    "classification_instructions": "",
+                },
+                "categories": [],
+                "employees": [],
+                "updated_at": None,
+            }
+
+        updated_at = config_row["updated_at"]
+        employees: list[dict[str, Any]] = []
+        for row in employee_rows:
+            aliases = row["aliases"]
+            if isinstance(aliases, str):
+                aliases = json.loads(aliases)
+            employees.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "email": row["email"],
+                    "aliases": aliases or [],
+                }
+            )
+
+        return {
+            "config": {
+                "spam_folder": config_row["spam_folder"],
+                "default_forward": config_row["default_forward"],
+                "ack_template": config_row["ack_template"] or "",
+                "classification_instructions": config_row["classification_instructions"] or "",
+            },
+            "categories": [
+                {
+                    "slug": row["slug"],
+                    "display_name": row["display_name"],
+                    "classification_hints": row["classification_hints"] or "",
+                    "folder": row["folder"],
+                    "forward_to": row["forward_to"],
+                    "send_ack": row["send_ack"],
+                    "needs_live_agent": row["needs_live_agent"],
+                    "is_spam": row["is_spam"],
+                    "route_by_person": row["route_by_person"],
+                    "skip_forward": row["skip_forward"],
+                    "sort_order": row["sort_order"],
+                    "enabled": row["enabled"],
+                }
+                for row in category_rows
+            ],
+            "employees": employees,
+            "updated_at": updated_at.isoformat() if updated_at else None,
+        }
+
+    async def save_classification_rules(self, payload: dict[str, Any]) -> dict[str, Any]:
+        config = payload.get("config") or {}
+        categories = payload.get("categories") or []
+        employees = payload.get("employees") or []
+        now = _utc_now()
+
+        conn = await self.connect()
+        try:
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO classification_config (
+                        id, spam_folder, default_forward, ack_template,
+                        classification_instructions, updated_at
+                    ) VALUES (1, $1, $2, $3, $4, $5)
+                    ON CONFLICT (id) DO UPDATE SET
+                        spam_folder = EXCLUDED.spam_folder,
+                        default_forward = EXCLUDED.default_forward,
+                        ack_template = EXCLUDED.ack_template,
+                        classification_instructions = EXCLUDED.classification_instructions,
+                        updated_at = EXCLUDED.updated_at
+                    """,
+                    config.get("spam_folder") or "Junk",
+                    config.get("default_forward"),
+                    config.get("ack_template") or "",
+                    config.get("classification_instructions") or "",
+                    now,
+                )
+                await conn.execute("DELETE FROM classification_categories")
+                for item in categories:
+                    await conn.execute(
+                        """
+                        INSERT INTO classification_categories (
+                            slug, display_name, classification_hints, folder, forward_to,
+                            send_ack, needs_live_agent, is_spam, route_by_person,
+                            skip_forward, sort_order, enabled
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                        """,
+                        item["slug"],
+                        item["display_name"],
+                        item.get("classification_hints") or "",
+                        item["folder"],
+                        item.get("forward_to"),
+                        bool(item.get("send_ack", True)),
+                        bool(item.get("needs_live_agent", False)),
+                        bool(item.get("is_spam", False)),
+                        bool(item.get("route_by_person", False)),
+                        bool(item.get("skip_forward", False)),
+                        int(item.get("sort_order") or 0),
+                        bool(item.get("enabled", True)),
+                    )
+                await conn.execute("DELETE FROM classification_employees")
+                for item in employees:
+                    await conn.execute(
+                        """
+                        INSERT INTO classification_employees (name, email, aliases)
+                        VALUES ($1, $2, $3::jsonb)
+                        """,
+                        item["name"],
+                        item["email"],
+                        json.dumps(list(item.get("aliases") or [])),
+                    )
+        finally:
+            await conn.close()
+
+        return await self.get_classification_rules()

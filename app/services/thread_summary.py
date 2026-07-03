@@ -68,7 +68,7 @@ class ThreadSummaryService:
 
         system_prompt = augment_system_prompt(
             (
-                "You summarize email threads for support agents at GK Hair. "
+                "You summarize email threads for support agents. "
                 "Personal details are already redacted as [EMAIL], [PHONE], [LINK], [REDACTED]. "
                 "Never invent facts. Keep each bullet under 15 words. "
                 "history_points should cover prior messages only. "

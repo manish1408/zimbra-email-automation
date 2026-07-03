@@ -1,120 +1,228 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AgentTraining } from '../../core/models/email.models';
+import {
+  AgentTraining,
+  ClassificationEmployee,
+  ClassificationRules,
+} from '../../core/models/email.models';
 import { AgentService } from '../../core/services/agent.service';
 
-const MAX_TRAINING_LENGTH = 8000;
+const MAX_TEXT_LENGTH = 8000;
 
 @Component({
   selector: 'app-agent',
   standalone: true,
   imports: [CommonModule, FormsModule],
-  template: `
-    <div class="container py-4">
-      <h1 class="h3 mb-2">Agent Training</h1>
-      <p class="text-muted mb-4">
-        Global instructions for all mailboxes — affects classification, thread summaries, and draft replies.
-      </p>
-
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <label class="form-label" for="trainingContent">Training text</label>
-          <textarea
-            id="trainingContent"
-            class="form-control font-monospace"
-            rows="14"
-            style="min-height: 320px"
-            [(ngModel)]="content"
-            [disabled]="loading || saving"
-            placeholder="Example: Always treat emails from vendor@example.com as logistics. Use a formal tone for billing inquiries."
-          ></textarea>
-          <div class="d-flex flex-wrap align-items-center gap-3 mt-3">
-            <button
-              class="btn btn-primary"
-              [disabled]="loading || saving || !dirty"
-              (click)="save()"
-            >
-              {{ saving ? 'Saving…' : 'Save Training' }}
-            </button>
-            <span class="small text-muted">{{ content.length }} / {{ maxLength }}</span>
-            @if (updatedAt) {
-              <span class="small text-muted">Last saved {{ updatedAt | date: 'medium' }}</span>
-            }
-          </div>
-          @if (loading) {
-            <div class="mt-3 text-muted small">Loading training…</div>
-          }
-          @if (error) {
-            <div class="alert alert-danger mt-3 mb-0">{{ error }}</div>
-          }
-          @if (successMessage) {
-            <div class="alert alert-success mt-3 mb-0">{{ successMessage }}</div>
-          }
-        </div>
-      </div>
-    </div>
-  `,
+  templateUrl: './agent.html',
+  styleUrl: './agent.scss',
 })
 export class AgentComponent implements OnInit {
   private readonly agentService = inject(AgentService);
 
-  readonly maxLength = MAX_TRAINING_LENGTH;
+  readonly maxLength = MAX_TEXT_LENGTH;
 
-  content = '';
-  savedContent = '';
-  updatedAt: string | null = null;
-  loading = false;
-  saving = false;
+  generalRules = '';
+  savedGeneralRules = '';
+  draftReplyRules = '';
+  savedDraftReplyRules = '';
+  trainingUpdatedAt: string | null = null;
+  trainingLoading = false;
+  generalSaving = false;
+  draftSaving = false;
+
+  rules: ClassificationRules | null = null;
+  savedRulesJson = '';
+  rulesUpdatedAt: string | null = null;
+  rulesLoading = false;
+  rulesSaving = false;
+
   error = '';
   successMessage = '';
 
-  get dirty(): boolean {
-    return this.content !== this.savedContent;
-  }
-
   ngOnInit(): void {
-    this.load();
+    this.loadTraining();
+    this.loadRules();
   }
 
-  load(): void {
-    this.loading = true;
-    this.error = '';
+  get generalDirty(): boolean {
+    return this.generalRules !== this.savedGeneralRules;
+  }
+
+  get draftDirty(): boolean {
+    return this.draftReplyRules !== this.savedDraftReplyRules;
+  }
+
+  get rulesDirty(): boolean {
+    return this.rules ? JSON.stringify(this.rules) !== this.savedRulesJson : false;
+  }
+
+  loadTraining(): void {
+    this.trainingLoading = true;
     this.agentService.getTraining().subscribe({
       next: (res) => this.applyTraining(res),
       error: (err) => {
-        this.error = err?.error?.detail ?? 'Failed to load training';
-        this.loading = false;
+        this.error = err?.error?.detail ?? 'Failed to load training rules';
+        this.trainingLoading = false;
       },
     });
   }
 
-  save(): void {
-    if (this.content.length > this.maxLength) {
-      this.error = `Training text must be at most ${this.maxLength} characters.`;
+  saveGeneralRules(): void {
+    if (this.generalRules.length > this.maxLength) {
+      this.error = `General rules must be at most ${this.maxLength} characters.`;
       return;
     }
 
-    this.saving = true;
+    this.generalSaving = true;
     this.error = '';
     this.successMessage = '';
-    this.agentService.saveTraining(this.content).subscribe({
+    this.agentService.saveGeneralRules(this.generalRules).subscribe({
       next: (res) => {
         this.applyTraining(res);
-        this.saving = false;
-        this.successMessage = 'Training saved.';
+        this.generalSaving = false;
+        this.successMessage = 'General rules saved.';
       },
       error: (err) => {
-        this.error = err?.error?.detail ?? 'Failed to save training';
-        this.saving = false;
+        this.error = err?.error?.detail ?? 'Failed to save general rules';
+        this.generalSaving = false;
       },
     });
   }
 
+  saveDraftReplyRules(): void {
+    if (this.draftReplyRules.length > this.maxLength) {
+      this.error = `Draft reply rules must be at most ${this.maxLength} characters.`;
+      return;
+    }
+
+    this.draftSaving = true;
+    this.error = '';
+    this.successMessage = '';
+    this.agentService.saveDraftReplyRules(this.draftReplyRules).subscribe({
+      next: (res) => {
+        this.applyTraining(res);
+        this.draftSaving = false;
+        this.successMessage = 'Draft reply rules saved.';
+      },
+      error: (err) => {
+        this.error = err?.error?.detail ?? 'Failed to save draft reply rules';
+        this.draftSaving = false;
+      },
+    });
+  }
+
+  loadRules(): void {
+    this.rulesLoading = true;
+    this.agentService.getClassificationRules().subscribe({
+      next: (res) => this.applyRules(res),
+      error: (err) => {
+        this.error = err?.error?.detail ?? 'Failed to load classification rules';
+        this.rulesLoading = false;
+      },
+    });
+  }
+
+  saveRules(): void {
+    if (!this.rules || this.rules.categories.length === 0) {
+      this.error = 'At least one category is required.';
+      return;
+    }
+
+    const slugs = this.rules.categories.map((c) => c.slug.trim());
+    if (new Set(slugs).size !== slugs.length) {
+      this.error = 'Category slugs must be unique.';
+      return;
+    }
+
+    this.rulesSaving = true;
+    this.error = '';
+    this.successMessage = '';
+    this.agentService.saveClassificationRules(this.rules).subscribe({
+      next: (res) => {
+        this.applyRules(res);
+        this.rulesSaving = false;
+        this.successMessage = 'Classification rules saved.';
+      },
+      error: (err) => {
+        this.error = err?.error?.detail ?? 'Failed to save classification rules';
+        this.rulesSaving = false;
+      },
+    });
+  }
+
+  addCategory(): void {
+    if (!this.rules) return;
+    const nextOrder = (this.rules.categories.at(-1)?.sort_order ?? 0) + 10;
+    this.rules.categories = [
+      ...this.rules.categories,
+      {
+        slug: '',
+        display_name: '',
+        classification_hints: '',
+        folder: '',
+        forward_to: null,
+        send_ack: true,
+        needs_live_agent: false,
+        is_spam: false,
+        route_by_person: false,
+        skip_forward: false,
+        sort_order: nextOrder,
+        enabled: true,
+      },
+    ];
+  }
+
+  removeCategory(index: number): void {
+    if (!this.rules) return;
+    this.rules.categories = this.rules.categories.filter((_, i) => i !== index);
+  }
+
+  addEmployee(): void {
+    if (!this.rules) return;
+    this.rules.employees = [
+      ...this.rules.employees,
+      { name: '', email: '', aliases: [] },
+    ];
+  }
+
+  removeEmployee(index: number): void {
+    if (!this.rules) return;
+    this.rules.employees = this.rules.employees.filter((_, i) => i !== index);
+  }
+
+  aliasesText(employee: ClassificationEmployee): string {
+    return (employee.aliases ?? []).join(', ');
+  }
+
+  setAliases(employee: ClassificationEmployee, value: string): void {
+    employee.aliases = value
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+
   private applyTraining(res: AgentTraining): void {
-    this.content = res.content ?? '';
-    this.savedContent = this.content;
-    this.updatedAt = res.updated_at;
-    this.loading = false;
+    this.generalRules = res.general_rules ?? '';
+    this.savedGeneralRules = this.generalRules;
+    this.draftReplyRules = res.draft_reply_rules ?? '';
+    this.savedDraftReplyRules = this.draftReplyRules;
+    this.trainingUpdatedAt = res.updated_at;
+    this.trainingLoading = false;
+  }
+
+  private applyRules(res: ClassificationRules): void {
+    this.rules = {
+      ...res,
+      config: { ...res.config },
+      categories: res.categories.map((c) => ({ ...c })),
+      employees: res.employees.map((e) => ({
+        ...e,
+        aliases: [...(e.aliases ?? [])],
+      })),
+    };
+    this.savedRulesJson = JSON.stringify(this.rules);
+    this.rulesUpdatedAt = res.updated_at;
+    this.rulesLoading = false;
   }
 }

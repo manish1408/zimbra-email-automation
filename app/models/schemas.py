@@ -121,12 +121,59 @@ class SyncResult(BaseModel):
 
 
 class AgentTrainingResponse(BaseModel):
-    content: str = ""
+    general_rules: str = ""
+    draft_reply_rules: str = ""
     updated_at: str | None = None
 
 
-class AgentTrainingUpdateRequest(BaseModel):
-    content: str = Field(default="", max_length=8000)
+class AgentTrainingGeneralUpdateRequest(BaseModel):
+    general_rules: str = Field(default="", max_length=8000)
+
+
+class AgentTrainingDraftReplyUpdateRequest(BaseModel):
+    draft_reply_rules: str = Field(default="", max_length=8000)
+
+
+class ClassificationConfigSchema(BaseModel):
+    spam_folder: str = "Junk"
+    default_forward: str | None = None
+    ack_template: str = ""
+    classification_instructions: str = ""
+
+
+class ClassificationCategorySchema(BaseModel):
+    slug: str = Field(min_length=1, max_length=64)
+    display_name: str = Field(min_length=1, max_length=128)
+    classification_hints: str = ""
+    folder: str = Field(min_length=1, max_length=128)
+    forward_to: str | None = None
+    send_ack: bool = True
+    needs_live_agent: bool = False
+    is_spam: bool = False
+    route_by_person: bool = False
+    skip_forward: bool = False
+    sort_order: int = 0
+    enabled: bool = True
+
+
+class ClassificationEmployeeSchema(BaseModel):
+    id: int | None = None
+    name: str = Field(min_length=1, max_length=128)
+    email: str = Field(min_length=3, max_length=256)
+    aliases: list[str] = Field(default_factory=list)
+
+
+class ClassificationRulesResponse(BaseModel):
+    config: ClassificationConfigSchema
+    categories: list[ClassificationCategorySchema] = Field(default_factory=list)
+    employees: list[ClassificationEmployeeSchema] = Field(default_factory=list)
+    updated_at: str | None = None
+
+
+class ClassificationRulesUpdateRequest(BaseModel):
+    config: ClassificationConfigSchema
+    categories: list[ClassificationCategorySchema] = Field(default_factory=list)
+    employees: list[ClassificationEmployeeSchema] = Field(default_factory=list)
 
 
 class MessageMetadata(BaseModel):

@@ -13,7 +13,6 @@ from app.db.email_repository import EmailRepository
 from app.models.schemas import MessageDetail
 from app.services.email_sync import EmailSyncService
 from app.services.llm import llm_configured, llm_not_configured_message
-from app.services.routing import RoutingResolver
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +52,10 @@ class ScheduledPipeline:
         settings: Settings,
         email_service: EmailSyncService | None = None,
         repository: EmailRepository | None = None,
-        resolver: RoutingResolver | None = None,
     ):
         self.settings = settings
         self.email_service = email_service or EmailSyncService(settings)
         self.repository = repository or EmailRepository(settings.database_url)
-        self.resolver = resolver or RoutingResolver(settings, self.email_service)
 
     async def run(self, *, skip_analysis: bool = False) -> dict[str, Any]:
         target = self.settings.sync_target_email
@@ -245,7 +242,6 @@ class ScheduledPipeline:
             email_service=self.email_service,
             settings=self.settings,
             email_repository=self.repository,
-            resolver=self.resolver,
         )
 
         report = result.get("report") or {}

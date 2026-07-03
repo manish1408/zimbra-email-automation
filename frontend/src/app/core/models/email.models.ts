@@ -79,7 +79,44 @@ export interface SyncResult {
 }
 
 export interface AgentTraining {
-  content: string;
+  general_rules: string;
+  draft_reply_rules: string;
+  updated_at: string | null;
+}
+
+export interface ClassificationConfig {
+  spam_folder: string;
+  default_forward: string | null;
+  ack_template: string;
+  classification_instructions: string;
+}
+
+export interface ClassificationCategory {
+  slug: string;
+  display_name: string;
+  classification_hints: string;
+  folder: string;
+  forward_to: string | null;
+  send_ack: boolean;
+  needs_live_agent: boolean;
+  is_spam: boolean;
+  route_by_person: boolean;
+  skip_forward: boolean;
+  sort_order: number;
+  enabled: boolean;
+}
+
+export interface ClassificationEmployee {
+  id?: number | null;
+  name: string;
+  email: string;
+  aliases: string[];
+}
+
+export interface ClassificationRules {
+  config: ClassificationConfig;
+  categories: ClassificationCategory[];
+  employees: ClassificationEmployee[];
   updated_at: string | null;
 }
 
@@ -95,6 +132,7 @@ export interface MessageMetadata {
   classification?: Record<string, unknown> | null;
   draft_reply_text?: string | null;
   ack_body_text?: string | null;
+  thread_summary?: ThreadSummary | Record<string, unknown> | null;
   report?: Record<string, unknown> | null;
   error?: string | null;
   processed_at?: string | null;

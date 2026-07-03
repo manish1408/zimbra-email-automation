@@ -32,7 +32,7 @@ OPENAPI_TAGS = [
     },
     {
         "name": "Agent",
-        "description": "Global agent training configuration.",
+        "description": "Global agent training and classification/routing rules.",
     },
 ]
 
@@ -99,7 +99,10 @@ def create_app() -> FastAPI:
                 "list_folders": "GET /api/v1/users/{email}/folders",
                 "sync_all": "POST /api/v1/sync",
                 "run_automation": "POST /api/v1/automation/users/{email}/messages/{id}/run",
-                "agent_training": "GET/PUT /api/v1/agent/training",
+                "agent_training": "GET /api/v1/agent/training",
+                "agent_general_rules": "PUT /api/v1/agent/training/general-rules",
+                "agent_draft_reply_rules": "PUT /api/v1/agent/training/draft-reply-rules",
+                "classification_rules": "GET/PUT /api/v1/agent/classification-rules",
             },
         }
 

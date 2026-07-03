@@ -72,12 +72,7 @@
             <span class="badge text-bg-light border text-dark small">PII redacted</span>
           </div>
           <div class="card-body py-3">
-            @if (summaryLoading) {
-              <div class="text-center py-3">
-                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-                <p class="text-muted small mt-2 mb-0">Summarizing conversation…</p>
-              </div>
-            } @else if (threadSummary) {
+            @if (threadSummary) {
               @if (threadSummary.focus) {
                 <p class="summary-focus mb-3">{{ threadSummary.focus }}</p>
               }
@@ -102,7 +97,9 @@
                 <p class="small text-muted mb-0">No summary points available.</p>
               }
             } @else {
-              <p class="small text-muted mb-0">Thread summary could not be loaded.</p>
+              <p class="small text-muted mb-0">
+                No summary yet. Click <strong>Run automation</strong> to generate one.
+              </p>
             }
           </div>
         </div>
@@ -187,20 +184,20 @@
           </div>
         </div>
 
-        @if (result.draft_reply_text) {
+        @if (draftReplyText()) {
           <div class="result-card card mb-3">
             <div class="card-header py-2">Generated draft</div>
             <div class="card-body py-3">
-              <pre class="draft-block mb-0">{{ result.draft_reply_text }}</pre>
+              <pre class="draft-block mb-0">{{ draftReplyText() }}</pre>
             </div>
           </div>
         }
 
-        @if (result.ack_body_text) {
+        @if (ackBodyText()) {
           <div class="result-card card mb-3">
             <div class="card-header py-2">Acknowledgement</div>
             <div class="card-body py-3">
-              <pre class="draft-block mb-0">{{ result.ack_body_text }}</pre>
+              <pre class="draft-block mb-0">{{ ackBodyText() }}</pre>
             </div>
           </div>
         }
@@ -235,6 +232,12 @@
                         @if (run.error) {
                           <div class="small text-danger mt-1">{{ run.error }}</div>
                         }
+                        @if (run.draft_reply_text) {
+                          <div class="run-draft mt-2">
+                            <div class="small text-muted mb-1">Draft</div>
+                            <pre class="draft-block mb-0">{{ run.draft_reply_text }}</pre>
+                          </div>
+                        }
                       </li>
                     }
                   </ul>
@@ -245,7 +248,7 @@
             </div>
           </div>
         </div>
-        } @else if (!threadSummary && !summaryLoading) {
+        } @else if (!threadSummary) {
           <div class="empty-results text-center py-5 px-2">
             <div class="empty-icon mb-3" aria-hidden="true">
               <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="currentColor" viewBox="0 0 16 16">

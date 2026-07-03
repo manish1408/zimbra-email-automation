@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from app.agents.state import MessageClassification
-from app.services.routing import RoutingRules
+from app.services.classification_rules import ClassificationRules
 
 
 def _extract_name(from_address: str | None) -> str:
@@ -19,11 +19,12 @@ def _extract_name(from_address: str | None) -> str:
 def build_acknowledgement(
     message: dict,
     classification: MessageClassification,
-    rules: RoutingRules,
+    rules: ClassificationRules,
 ) -> str:
-    template = rules.ack_template or (
-        "Thank you for contacting GK Hair. We have received your email and are working on it."
-    )
+    template = rules.config.ack_template.strip()
+    if not template:
+        return ""
+
     from_addr = message.get("from") or message.get("from_address")
     customer_name = _extract_name(from_addr)
     subject = message.get("subject") or "(no subject)"
@@ -32,7 +33,7 @@ def build_acknowledgement(
     body = template
     replacements = {
         "{customer_name}": customer_name,
-        "{category}": category.replace("_", " "),
+        "{category}": str(category).replace("_", " "),
         "{reference_subject}": subject,
     }
     for key, value in replacements.items():

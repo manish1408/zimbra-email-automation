@@ -13,7 +13,6 @@ from app.models.schemas import (
 from app.services.email_sync import EmailSyncService
 from app.services.llm import llm_configured, llm_not_configured_message
 from app.services.message_automation import MessageAutomationService
-from app.services.routing import RoutingResolver
 
 router = APIRouter(prefix="/automation/users/{user_email}", tags=["Automation"])
 
@@ -23,8 +22,7 @@ def get_automation_service(
     email_service: EmailSyncService = Depends(get_email_service),
     repository: EmailRepository = Depends(get_email_repository),
 ) -> MessageAutomationService:
-    resolver = RoutingResolver(config, email_service)
-    return MessageAutomationService(config, email_service, repository, resolver)
+    return MessageAutomationService(config, email_service, repository)
 
 
 @router.post(
@@ -153,7 +151,8 @@ async def run_mailbox_automation(
     response_model=ThreadSummaryResponse,
     summary="Get point-wise thread summary for a message",
     description=(
-        "Returns a cached thread summary when available, otherwise generates one. "
+        "Returns a cached thread summary when available. "
+        "Pass refresh=true to regenerate (LLM). "
         "Personal details are redacted before summarization."
     ),
 )
