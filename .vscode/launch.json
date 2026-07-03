@@ -40,10 +40,10 @@
       "justMyCode": true
     },
     {
-      "name": "Scheduled Job",
+      "name": "Mail Poller",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/scripts/scheduled_job.py",
+      "program": "${workspaceFolder}/scripts/mail_poller.py",
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
       "python": "${workspaceFolder}/.venv/bin/python",
@@ -51,11 +51,11 @@
       "justMyCode": true
     },
     {
-      "name": "Scheduled Job (sync only)",
+      "name": "Mail Poller (once)",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/scripts/scheduled_job.py",
-      "args": ["--sync-only"],
+      "program": "${workspaceFolder}/scripts/mail_poller.py",
+      "args": ["--once"],
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env",
       "python": "${workspaceFolder}/.venv/bin/python",

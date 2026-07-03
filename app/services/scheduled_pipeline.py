@@ -57,7 +57,12 @@ class ScheduledPipeline:
         self.email_service = email_service or EmailSyncService(settings)
         self.repository = repository or EmailRepository(settings.database_url)
 
-    async def run(self, *, skip_analysis: bool = False) -> dict[str, Any]:
+    async def run(
+        self,
+        *,
+        skip_analysis: bool = False,
+        process_all: bool = False,
+    ) -> dict[str, Any]:
         target = self.settings.sync_target_email
         if not target:
             raise ValueError("SYNC_TARGET_EMAIL is not configured")
@@ -79,8 +84,23 @@ class ScheduledPipeline:
                 }
                 return result
 
-            analysis_stats = await self.run_action_pipeline(conn, target)
-            result["analysis"] = analysis_stats
+            if process_all:
+                batches: list[dict[str, Any]] = []
+                while True:
+                    stats = await self.run_action_pipeline(conn, target)
+                    batches.append(stats)
+                    if stats.get("skipped") or int(stats.get("message_count") or 0) == 0:
+                        break
+                remaining = await self.repository.count_unanalyzed(conn, target)
+                result["analysis"] = {
+                    "batches": len(batches),
+                    "batch_results": batches,
+                    "remaining_unanalyzed": remaining,
+                    "dry_run": self.settings.automation_dry_run,
+                }
+            else:
+                analysis_stats = await self.run_action_pipeline(conn, target)
+                result["analysis"] = analysis_stats
             return result
         finally:
             await conn.close()
