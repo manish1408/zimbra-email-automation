@@ -181,6 +181,54 @@ ssh ${DEPLOY_USER}@${DEPLOY_HOST} "systemctl reload nginx"
 
 ---
 
+## Mail poller control
+
+The mail poller runs as systemd service `zimbra-mail-poller` on the server. Control it from your **local machine** without SSH-ing manually.
+
+### Setup (once)
+
+```bash
+cp deploy.env.example deploy.env
+# Edit deploy.env — set DEPLOY_HOST, DEPLOY_USER, and optionally DEPLOY_PASSWORD
+# Prefer SSH keys: ssh-copy-id root@176.123.3.2 and leave DEPLOY_PASSWORD empty
+```
+
+### Commands (local)
+
+```bash
+./scripts/remote-mail-poller.sh start      # start the poller
+./scripts/remote-mail-poller.sh stop       # stop the poller
+./scripts/remote-mail-poller.sh restart    # restart after config/code changes
+./scripts/remote-mail-poller.sh status     # show systemd status
+./scripts/remote-mail-poller.sh logs       # last 50 log lines
+./scripts/remote-mail-poller.sh logs -f    # follow live logs (Ctrl+C to exit)
+./scripts/remote-mail-poller.sh enable     # auto-start on server boot
+./scripts/remote-mail-poller.sh disable    # do not auto-start on boot
+```
+
+### Commands (on the server)
+
+If you are already SSH'd into the server:
+
+```bash
+cd /opt/zimbra-email-automation
+./scripts/mail-poller-service.sh start
+./scripts/mail-poller-service.sh stop
+./scripts/mail-poller-service.sh status
+./scripts/mail-poller-service.sh logs -f
+```
+
+Or use systemd directly:
+
+```bash
+systemctl start zimbra-mail-poller
+systemctl stop zimbra-mail-poller
+systemctl status zimbra-mail-poller
+journalctl -u zimbra-mail-poller -f
+```
+
+---
+
 ## Service management (on the server)
 
 SSH in:
