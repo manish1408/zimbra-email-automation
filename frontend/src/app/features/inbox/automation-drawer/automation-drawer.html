@@ -66,44 +66,6 @@
           <p class="text-muted small mt-2 mb-0">Loading automation results…</p>
         </div>
       } @else {
-        <div class="result-card card mb-3">
-          <div class="card-header py-2 d-flex align-items-center justify-content-between">
-            <span>Thread summary</span>
-            <span class="badge text-bg-light border text-dark small">PII redacted</span>
-          </div>
-          <div class="card-body py-3">
-            @if (threadSummary) {
-              @if (threadSummary.focus) {
-                <p class="summary-focus mb-3">{{ threadSummary.focus }}</p>
-              }
-
-              @if (threadSummary.current_points.length) {
-                <h6 class="summary-heading">Current email</h6>
-                <ul class="summary-list mb-3">
-                  @for (point of threadSummary.current_points; track $index) {
-                    <li>{{ point }}</li>
-                  }
-                </ul>
-              }
-
-              @if (threadSummary.history_points.length) {
-                <h6 class="summary-heading">Conversation history</h6>
-                <ul class="summary-list mb-0">
-                  @for (point of threadSummary.history_points; track $index) {
-                    <li>{{ point }}</li>
-                  }
-                </ul>
-              } @else if (!threadSummary.current_points.length) {
-                <p class="small text-muted mb-0">No summary points available.</p>
-              }
-            } @else {
-              <p class="small text-muted mb-0">
-                No summary yet. Click <strong>Run automation</strong> to generate one.
-              </p>
-            }
-          </div>
-        </div>
-
         @if (result) {
           @if (result.dry_run) {
             <div class="alert alert-warning py-2 small mb-3 mb-0">
@@ -251,7 +213,7 @@
             </div>
           </div>
         </div>
-        } @else if (!threadSummary) {
+        } @else {
           <div class="empty-results text-center py-5 px-2">
             <div class="empty-icon mb-3" aria-hidden="true">
               <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="currentColor" viewBox="0 0 16 16">

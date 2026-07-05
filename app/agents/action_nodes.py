@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.agents.state import PipelineState
@@ -11,6 +12,8 @@ from app.services.email_thread import message_needs_full_body
 from app.services.llm import llm_configured
 from app.services.message_analysis import MessageAnalysisService
 from app.services.routing import RoutingResolver
+
+logger = logging.getLogger(__name__)
 
 
 class ActionNodeContext:
@@ -96,21 +99,6 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 return None
         return await _ensure_readable_content(user_email, message, conn)
 
-    async def _load_cached_summaries(
-        account: str,
-        message_ids: list[str],
-        conn: DbConnection | None,
-    ) -> dict[str, dict[str, Any]]:
-        if not ctx.email_repository or not message_ids or conn is None:
-            return {}
-        cached: dict[str, dict[str, Any]] = {}
-        for msg_id in message_ids:
-            action = await ctx.email_repository.get_message_action(conn, account, msg_id)
-            summary = action.get("thread_summary") if action else None
-            if summary and isinstance(summary, dict):
-                cached[msg_id] = summary
-        return cached
-
     async def ingest_mailbox(state: PipelineState) -> dict:
         user_email = state["user_email"]
         limit = state.get("limit") or ctx.settings.agent_inbox_limit
@@ -162,7 +150,6 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
         if not messages or not llm_configured(ctx.settings):
             return {
                 "classifications": [],
-                "thread_summaries": [],
                 "draft_replies": {},
                 "current_node": "analyze_messages",
             }
@@ -171,17 +158,9 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
         if not rules:
             raise ValueError("Classification rules are not loaded")
 
-        msg_ids = [str(m.get("id", "")) for m in messages]
-        cached_summaries = await _load_cached_summaries(
-            user_email, msg_ids, _pipeline_conn(state)
-        )
-
         related_by_id: dict[str, list[dict[str, Any]]] = {}
         for message in messages:
             msg_id = str(message.get("id", ""))
-            if cached_summaries.get(msg_id):
-                related_by_id[msg_id] = []
-                continue
             try:
                 thread_messages = await ctx.email_service.search_thread_messages(
                     user_email,
@@ -196,34 +175,22 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 related_by_id[msg_id] = []
 
         try:
-            classifications, summaries, drafts = await MessageAnalysisService(
+            classifications, drafts = await MessageAnalysisService(
                 ctx.settings
             ).analyze_batch(
                 messages,
                 classification_rules=state["classification_rules"],
                 related_by_id=related_by_id,
-                cached_summaries=cached_summaries,
                 agent_training=state.get("agent_training"),
                 draft_reply_rules=state.get("draft_reply_rules"),
             )
         except Exception as exc:
+            logger.exception("Message analysis failed")
             classifications = []
-            summaries = []
             drafts = {}
-            for message in messages:
-                msg_id = str(message.get("id", ""))
-                summaries.append(
-                    {
-                        "message_id": msg_id,
-                        "history_points": [],
-                        "current_points": [f"Analysis failed: {exc}"],
-                        "focus": "",
-                    }
-                )
 
         return {
             "classifications": classifications,
-            "thread_summaries": summaries,
             "draft_replies": drafts,
             "current_node": "analyze_messages",
         }
@@ -247,10 +214,6 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 "current_node": "apply_actions",
             }
 
-        summaries_by_id = {
-            str(item.get("message_id")): item
-            for item in (state.get("thread_summaries") or [])
-        }
         actions, errors = await ctx.executor.apply_all(
             conn,
             account,
@@ -259,7 +222,6 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             force_reprocess=bool(state.get("force_reprocess")),
             automation_thread_id=state.get("automation_thread_id"),
             report=state.get("report"),
-            thread_summaries=summaries_by_id,
             draft_replies=state.get("draft_replies") or {},
         )
         zimbra_ids = [c["message_id"] for c in classifications]
@@ -297,7 +259,6 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             "errors": errors,
             "classifications": classifications,
             "actions": actions,
-            "thread_summaries": state.get("thread_summaries") or [],
             "dry_run": ctx.settings.automation_dry_run,
             "move_to_folders": ctx.settings.automation_move_to_folders,
         }

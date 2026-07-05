@@ -132,7 +132,6 @@ export interface MessageMetadata {
   classification?: Record<string, unknown> | null;
   draft_reply_text?: string | null;
   ack_body_text?: string | null;
-  thread_summary?: ThreadSummary | Record<string, unknown> | null;
   report?: Record<string, unknown> | null;
   error?: string | null;
   processed_at?: string | null;
@@ -141,14 +140,6 @@ export interface MessageMetadata {
 
 export interface MessageAutomationRunRequest {
   force?: boolean;
-}
-
-export interface ThreadSummary {
-  account: string;
-  message_id: string;
-  history_points: string[];
-  current_points: string[];
-  focus: string;
 }
 
 export interface MessageAutomationRunSummary {
@@ -174,7 +165,6 @@ export interface MessageAutomationResult {
   actions?: Record<string, unknown> | null;
   draft_reply_text?: string | null;
   ack_body_text?: string | null;
-  thread_summary?: ThreadSummary | Record<string, unknown> | null;
   report: Record<string, unknown>;
   error?: string | null;
   processed_at?: string | null;

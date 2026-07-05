@@ -11,10 +11,9 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { catchError, of } from 'rxjs';
-import { MessageAutomationResult, MessageSummary, ThreadSummary } from '../../../core/models/email.models';
+import { MessageAutomationResult, MessageSummary } from '../../../core/models/email.models';
 import { formatMailDate } from '../../../core/format-date';
 import { AutomationService } from '../../../core/services/automation.service';
-import { LocalDataService } from '../../../core/services/local-data.service';
 
 @Component({
   selector: 'app-automation-drawer',
@@ -25,7 +24,6 @@ import { LocalDataService } from '../../../core/services/local-data.service';
 })
 export class AutomationDrawerComponent implements OnChanges, OnDestroy {
   private readonly automationService = inject(AutomationService);
-  private readonly localDataService = inject(LocalDataService);
   private readonly document = inject(DOCUMENT);
 
   @Input() account = '';
@@ -35,7 +33,6 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
   @Output() resultUpdated = new EventEmitter<MessageAutomationResult | null>();
 
   result: MessageAutomationResult | null = null;
-  threadSummary: ThreadSummary | null = null;
   loading = false;
   running = false;
   loadError = '';
@@ -51,7 +48,6 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
     }
     if (changes['open'] && !this.open) {
       this.result = null;
-      this.threadSummary = null;
       this.loadError = '';
       this.showHistory = false;
     }
@@ -81,7 +77,6 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
       next: (res) => {
         this.result = res;
         this.running = false;
-        this.applyThreadSummaryFromResult(res);
         this.resultUpdated.emit(res);
         this.refreshRuns();
       },
@@ -97,7 +92,6 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
     if (!this.account || !this.message) return;
     this.loading = true;
     this.loadError = '';
-    this.threadSummary = null;
     this.automationService
       .getResult(this.account, this.message.id)
       .pipe(catchError(() => of(null)))
@@ -105,53 +99,11 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
         next: (res) => {
           this.result = res;
           this.loading = false;
-          this.applyThreadSummaryFromResult(res);
-          if (!this.threadSummary) {
-            this.loadCachedThreadSummary();
-          }
         },
         error: () => {
           this.loading = false;
         },
       });
-  }
-
-  private loadCachedThreadSummary(): void {
-    if (!this.account || !this.message || this.threadSummary) return;
-    this.localDataService
-      .getMetadata(this.account, this.message.id)
-      .pipe(catchError(() => of(null)))
-      .subscribe((meta) => {
-        if (!meta?.thread_summary || typeof meta.thread_summary !== 'object') return;
-        const summary = meta.thread_summary as Record<string, unknown>;
-        this.threadSummary = {
-          account: meta.account,
-          message_id: meta.zimbra_id,
-          history_points: Array.isArray(summary['history_points'])
-            ? (summary['history_points'] as string[])
-            : [],
-          current_points: Array.isArray(summary['current_points'])
-            ? (summary['current_points'] as string[])
-            : [],
-          focus: typeof summary['focus'] === 'string' ? summary['focus'] : '',
-        };
-      });
-  }
-
-  private applyThreadSummaryFromResult(result: MessageAutomationResult | null): void {
-    const summary = result?.thread_summary;
-    if (!summary || typeof summary !== 'object') return;
-    this.threadSummary = {
-      account: result?.account ?? this.account,
-      message_id: result?.message_id ?? this.message?.id ?? '',
-      history_points: Array.isArray(summary['history_points'])
-        ? (summary['history_points'] as string[])
-        : [],
-      current_points: Array.isArray(summary['current_points'])
-        ? (summary['current_points'] as string[])
-        : [],
-      focus: typeof summary['focus'] === 'string' ? summary['focus'] : '',
-    };
   }
 
   refreshRuns(): void {

@@ -38,7 +38,6 @@ class ActionExecutor:
         force_reprocess: bool = False,
         automation_thread_id: str | None = None,
         report: dict[str, Any] | None = None,
-        thread_summaries: dict[str, dict[str, Any]] | None = None,
         draft_replies: dict[str, str] | None = None,
     ) -> tuple[list[MessageActionRecord], list[str]]:
         by_id = {str(m.get("id")): m for m in messages}
@@ -66,7 +65,6 @@ class ActionExecutor:
                 classification,
                 automation_thread_id=automation_thread_id,
                 report=report,
-                thread_summary=(thread_summaries or {}).get(msg_id),
                 draft_reply_text=drafts.get(msg_id),
             )
             actions.append(record)
@@ -84,7 +82,6 @@ class ActionExecutor:
         *,
         automation_thread_id: str | None = None,
         report: dict[str, Any] | None = None,
-        thread_summary: dict[str, Any] | None = None,
         draft_reply_text: str | None = None,
     ) -> tuple[MessageActionRecord, str | None]:
         msg_id = classification["message_id"]
@@ -104,7 +101,6 @@ class ActionExecutor:
             "draft_saved": False,
             "draft_reply_text": None,
             "ack_body_text": None,
-            "thread_summary": thread_summary,
             "error": None,
         }
         error: str | None = None
@@ -187,7 +183,6 @@ class ActionExecutor:
                 ack_body_text=ack_body,
                 automation_thread_id=automation_thread_id,
                 report_json=report,
-                thread_summary=thread_summary,
             )
         except Exception as exc:
             error = f"{msg_id}: {exc}"
@@ -204,7 +199,6 @@ class ActionExecutor:
                 ack_body_text=ack_body,
                 automation_thread_id=automation_thread_id,
                 report_json=report,
-                thread_summary=thread_summary,
                 error=str(exc),
             )
 

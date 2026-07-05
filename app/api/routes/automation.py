@@ -8,7 +8,6 @@ from app.models.schemas import (
     MessageAutomationResult,
     MessageAutomationRunListResponse,
     MessageAutomationRunRequest,
-    ThreadSummaryResponse,
 )
 from app.services.email_sync import EmailSyncService
 from app.services.llm import llm_configured, llm_not_configured_message
@@ -144,38 +143,3 @@ async def run_mailbox_automation(
         errors=list(stats.get("errors") or []),
         summary=dict(stats.get("summary") or {}),
     )
-
-
-@router.get(
-    "/messages/{message_id}/thread-summary",
-    response_model=ThreadSummaryResponse,
-    summary="Get point-wise thread summary for a message",
-    description=(
-        "Returns a cached thread summary when available. "
-        "Pass refresh=true to regenerate (LLM). "
-        "Personal details are redacted before summarization."
-    ),
-)
-async def get_message_thread_summary(
-    user_email: str,
-    message_id: str,
-    refresh: bool = Query(default=False, description="Regenerate even if cached"),
-    service: MessageAutomationService = Depends(get_automation_service),
-    settings: Settings = Depends(get_settings),
-):
-    if not llm_configured(settings):
-        raise HTTPException(status_code=503, detail=llm_not_configured_message(settings))
-
-    try:
-        return await service.get_thread_summary(
-            user_email, message_id, refresh=refresh
-        )
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Thread summary failed: {exc}",
-        ) from exc

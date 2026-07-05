@@ -75,9 +75,9 @@ class ClassificationRules:
         lines = [
             "Classify each email using exactly one category slug from the list below.",
             "For every message return: category (slug), is_spam, confidence, "
-            "requested_person, needs_live_agent, reasoning, thread summary fields, "
-            "and draft_reply_text for customer_support and orders (conversation-based "
-            "reply drafts), or when needs_live_agent is true; otherwise null.",
+            "requested_person, needs_live_agent, reasoning, and draft_reply_text for "
+            "customer_support and orders (conversation-based reply drafts), or when "
+            "needs_live_agent is true; otherwise null.",
             "",
         ]
         instructions = (self.config.classification_instructions or "").strip()

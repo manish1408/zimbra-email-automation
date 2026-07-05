@@ -23,18 +23,6 @@ class MessageAnalysisItem(BaseModel):
     requested_person: str | None = None
     needs_live_agent: bool = False
     reasoning: str
-    history_points: list[str] = Field(
-        default_factory=list,
-        description="Short bullet points for prior conversation, oldest first",
-    )
-    current_points: list[str] = Field(
-        default_factory=list,
-        description="Short bullet points for the current email only",
-    )
-    focus: str = Field(
-        default="",
-        description="One sentence on what the current email needs or asks for",
-    )
     draft_reply_text: str | None = Field(
         default=None,
         description=(
@@ -51,8 +39,6 @@ class MessageAnalysisBatch(BaseModel):
 def _message_prompt_block(
     message: dict[str, Any],
     related: list[dict[str, Any]] | None,
-    *,
-    cached_summary: dict[str, Any] | None = None,
 ) -> str:
     msg_id = str(message.get("id", ""))
     context = build_thread_context(message, related)
@@ -64,18 +50,11 @@ def _message_prompt_block(
         f"CURRENT EMAIL:\n{context['current_text'] or '(empty)'}",
         f"PRIOR CONVERSATION:\n{context['history_text'] or '(none)'}",
     ]
-    if cached_summary:
-        lines.append(
-            "CACHED SUMMARY (reuse these summary fields unless content clearly changed):\n"
-            f"history_points: {cached_summary.get('history_points')}\n"
-            f"current_points: {cached_summary.get('current_points')}\n"
-            f"focus: {cached_summary.get('focus')}"
-        )
     return "\n".join(lines)
 
 
 class MessageAnalysisService:
-    """Summarize, classify, and draft replies in a single LLM call per batch."""
+    """Classify emails and draft replies in a single LLM call per batch."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -94,22 +73,19 @@ class MessageAnalysisService:
         messages: list[dict[str, Any]],
         classification_rules: ClassificationRules,
         related_by_id: dict[str, list[dict[str, Any]]] | None = None,
-        cached_summaries: dict[str, dict[str, Any]] | None = None,
         agent_training: str | None = None,
         draft_reply_rules: str | None = None,
-    ) -> tuple[list[MessageClassification], list[dict[str, Any]], dict[str, str]]:
+    ) -> tuple[list[MessageClassification], dict[str, str]]:
         if not messages:
-            return [], [], {}
+            return [], {}
 
         related_by_id = related_by_id or {}
-        cached_summaries = cached_summaries or {}
         resolver = RoutingResolver(rules=classification_rules)
 
         blocks = [
             _message_prompt_block(
                 message,
                 related_by_id.get(str(message.get("id", "")), []),
-                cached_summary=cached_summaries.get(str(message.get("id", ""))),
             )
             for message in messages
         ]
@@ -124,13 +100,12 @@ class MessageAnalysisService:
             "Analyze each email below. Read the full CURRENT EMAIL text carefully before "
             "classifying — do not judge by From address alone (e.g. mailer@shopify.com "
             "often forwards real customer contact-form enquiries). "
-            "For every message return thread summary fields, classification fields, "
-            "and draft_reply_text.\n"
+            "For every message return classification fields and draft_reply_text.\n"
             "For category customer_support or orders, always write draft_reply_text as a "
             "complete reply draft grounded in the thread (prior messages + current email). "
             "For other categories, set draft_reply_text only when needs_live_agent is true.\n"
             "Personal details are redacted as [EMAIL], [PHONE], [LINK], [REDACTED]. "
-            "Never invent facts. Keep summary bullets under 15 words.\n\n"
+            "Never invent facts.\n\n"
             f"{rules_prompt}"
             f"{draft_section}\n\n"
             f"Emails:\n\n" + "\n\n".join(blocks)
@@ -155,7 +130,6 @@ class MessageAnalysisService:
 
         by_id = {str(m.get("id")): m for m in messages}
         classifications: list[MessageClassification] = []
-        summaries: list[dict[str, Any]] = []
         drafts: dict[str, str] = {}
 
         for item in result.analyses:
@@ -172,14 +146,6 @@ class MessageAnalysisService:
                 route_target=None,
             )
             classifications.append(resolver.normalize_classification(row))
-            summaries.append(
-                {
-                    "message_id": msg_id,
-                    "history_points": [p.strip() for p in item.history_points if p.strip()],
-                    "current_points": [p.strip() for p in item.current_points if p.strip()],
-                    "focus": item.focus.strip(),
-                }
-            )
             if item.draft_reply_text and item.draft_reply_text.strip():
                 drafts[msg_id] = item.draft_reply_text.strip()
 
@@ -199,13 +165,5 @@ class MessageAnalysisService:
                     route_target=None,
                 )
                 classifications.append(resolver.normalize_classification(row))
-                summaries.append(
-                    {
-                        "message_id": msg_id,
-                        "history_points": [],
-                        "current_points": ["Analysis unavailable."],
-                        "focus": "Review manually.",
-                    }
-                )
 
-        return classifications, summaries, drafts
+        return classifications, drafts
