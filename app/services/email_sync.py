@@ -119,8 +119,22 @@ class EmailSyncService:
         await self.mail.move_message(token, user_email, message_id, folder_id)
 
     async def get_or_create_folder(self, user_email: str, name: str) -> str:
+        return await self.ensure_folder(user_email, name)
+
+    async def ensure_folder(
+        self,
+        user_email: str,
+        name: str,
+        *,
+        force_create: bool = False,
+    ) -> str:
         token = await self._delegate_token(user_email)
-        return await self.mail.get_or_create_folder(token, user_email, name)
+        return await self.mail.ensure_folder(
+            token,
+            user_email,
+            name,
+            force_create=force_create,
+        )
 
     async def forward_message(
         self, user_email: str, message_id: str, to_address: str

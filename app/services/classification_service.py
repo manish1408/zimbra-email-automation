@@ -9,52 +9,35 @@ from app.agents.state import MessageClassification
 from app.config import Settings
 from app.services.agent_training import augment_system_prompt
 from app.services.classification_rules import ClassificationRules
-from app.services.email_thread import build_thread_context
-from app.services.llm import create_chat_llm, llm_configured, ainvoke_structured
+from app.services.llm import ainvoke_structured, create_chat_llm, llm_configured
 from app.services.routing import RoutingResolver
 
 
-class MessageAnalysisItem(BaseModel):
+class ClassificationItem(BaseModel):
     message_id: str
     subject: str | None = None
     category: str
     is_spam: bool = False
+    is_invoice_question: bool = False
+    is_order_status_question: bool = False
+    needs_response_generation: bool = False
+    needs_forwarding: bool = False
     confidence: float = Field(ge=0.0, le=1.0, default=0.8)
     requested_person: str | None = None
     needs_live_agent: bool = False
-    reasoning: str
-    draft_reply_text: str | None = Field(
-        default=None,
-        description=(
-            "Professional reply draft for customer_support and orders using thread "
-            "context; also when needs_live_agent is true; otherwise null"
-        ),
-    )
+    reasoning: str = ""
 
 
-class MessageAnalysisBatch(BaseModel):
-    analyses: list[MessageAnalysisItem]
+class ClassificationBatch(BaseModel):
+    analyses: list[ClassificationItem]
 
 
-def _message_prompt_block(
-    message: dict[str, Any],
-    related: list[dict[str, Any]] | None,
-) -> str:
-    msg_id = str(message.get("id", ""))
-    context = build_thread_context(message, related)
-    lines = [
-        f"### Message id={msg_id}",
-        f"From: {message.get('from') or message.get('from_address')}",
-        f"Subject: {context['subject']}",
-        f"Date: {message.get('date')}",
-        f"CURRENT EMAIL:\n{context['current_text'] or '(empty)'}",
-        f"PRIOR CONVERSATION:\n{context['history_text'] or '(none)'}",
-    ]
-    return "\n".join(lines)
+def _message_body(message: dict[str, Any]) -> str:
+    return str(message.get("body") or message.get("fragment") or "").strip()
 
 
-class MessageAnalysisService:
-    """Classify emails and draft replies in a single LLM call per batch."""
+class ClassificationService:
+    """Step 1: slim classify LLM — subject + body only."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -68,60 +51,51 @@ class MessageAnalysisService:
             self._llm = create_chat_llm(self.settings, temperature=0.15)
         return self._llm
 
-    async def analyze_batch(
+    async def classify_batch(
         self,
         messages: list[dict[str, Any]],
         classification_rules: ClassificationRules,
-        related_by_id: dict[str, list[dict[str, Any]]] | None = None,
         agent_training: str | None = None,
-        draft_reply_rules: str | None = None,
-    ) -> tuple[list[MessageClassification], dict[str, str]]:
+    ) -> list[MessageClassification]:
         if not messages:
-            return [], {}
+            return []
 
-        related_by_id = related_by_id or {}
         resolver = RoutingResolver(rules=classification_rules)
-
-        blocks = [
-            _message_prompt_block(
-                message,
-                related_by_id.get(str(message.get("id", "")), []),
-            )
-            for message in messages
-        ]
         rules_prompt = classification_rules.build_classification_prompt()
-        draft_section = ""
-        if (draft_reply_rules or "").strip():
-            draft_section = (
-                "\n\nDraft reply instructions:\n"
-                f"{draft_reply_rules.strip()}\n"
+        blocks: list[str] = []
+        for message in messages:
+            msg_id = str(message.get("id", ""))
+            blocks.append(
+                "\n".join(
+                    [
+                        f"### Message id={msg_id}",
+                        f"Subject: {message.get('subject') or '(no subject)'}",
+                        f"Body:\n{_message_body(message) or '(empty)'}",
+                    ]
+                )
             )
+
         prompt = (
-            "Analyze each email below. Read the full CURRENT EMAIL text carefully before "
-            "classifying — do not judge by From address alone (e.g. mailer@shopify.com "
-            "often forwards real customer contact-form enquiries). "
-            "For every message return classification fields and draft_reply_text.\n"
-            "For category customer_support or orders, always write draft_reply_text as a "
-            "complete reply draft grounded in the thread (prior messages + current email). "
-            "For other categories, set draft_reply_text only when needs_live_agent is true.\n"
-            "Personal details are redacted as [EMAIL], [PHONE], [LINK], [REDACTED]. "
-            "Never invent facts.\n\n"
-            f"{rules_prompt}"
-            f"{draft_section}\n\n"
+            "Classify each email below. Return one analysis per message id.\n"
+            "Set is_invoice_question / is_order_status_question when the customer asks "
+            "about invoices or order status. Set needs_response_generation when a "
+            "reply draft should be written. Set needs_forwarding when the email should "
+            "be forwarded to the team.\n\n"
+            f"{rules_prompt}\n\n"
             f"Emails:\n\n" + "\n\n".join(blocks)
         )
 
         system_prompt = augment_system_prompt(
             (
-                "You are an email analyst. Use exact category slug values from the rules. "
-                "Return one analysis object per message id."
+                "You are an email classifier. Use exact category slug values. "
+                "Return compact JSON only."
             ),
             agent_training,
         )
 
-        result: MessageAnalysisBatch = await ainvoke_structured(
+        result: ClassificationBatch = await ainvoke_structured(
             self.llm,
-            MessageAnalysisBatch,
+            ClassificationBatch,
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=prompt),
@@ -130,7 +104,6 @@ class MessageAnalysisService:
 
         by_id = {str(m.get("id")): m for m in messages}
         classifications: list[MessageClassification] = []
-        drafts: dict[str, str] = {}
 
         for item in result.analyses:
             msg_id = item.message_id
@@ -144,10 +117,14 @@ class MessageAnalysisService:
                 needs_live_agent=item.needs_live_agent,
                 reasoning=item.reasoning,
                 route_target=None,
+                is_invoice_question=item.is_invoice_question,
+                is_order_status_question=item.is_order_status_question,
+                needs_response_generation=item.needs_response_generation,
+                needs_forwarding=item.needs_forwarding,
+                automation_source="llm",
+                rule_id=None,
             )
             classifications.append(resolver.normalize_classification(row))
-            if item.draft_reply_text and item.draft_reply_text.strip():
-                drafts[msg_id] = item.draft_reply_text.strip()
 
         if not classifications and messages:
             fallback = classification_rules.fallback_category()
@@ -163,7 +140,13 @@ class MessageAnalysisService:
                     needs_live_agent=False,
                     reasoning="Default when model returned no items.",
                     route_target=None,
+                    is_invoice_question=False,
+                    is_order_status_question=False,
+                    needs_response_generation=False,
+                    needs_forwarding=False,
+                    automation_source="llm",
+                    rule_id=None,
                 )
                 classifications.append(resolver.normalize_classification(row))
 
-        return classifications, drafts
+        return classifications

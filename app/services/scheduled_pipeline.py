@@ -257,6 +257,7 @@ class ScheduledPipeline:
             "user_email": account,
             "limit": limit,
             "use_local_db": True,
+            "automation_thread_id": thread_id,
         }
         result = await run_action_pipeline(
             initial_state,

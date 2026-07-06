@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from app.agents.state import PipelineState
@@ -9,11 +8,7 @@ from app.db.email_repository import DbConnection, EmailRepository
 from app.services.action_executor import ActionExecutor
 from app.services.email_sync import EmailSyncService
 from app.services.email_thread import message_needs_full_body
-from app.services.llm import llm_configured
-from app.services.message_analysis import MessageAnalysisService
 from app.services.routing import RoutingResolver
-
-logger = logging.getLogger(__name__)
 
 
 class ActionNodeContext:
@@ -47,7 +42,7 @@ def _pipeline_conn(state: PipelineState) -> DbConnection | None:
     return state.get("db_conn")
 
 
-def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
+def make_base_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
     async def _fetch_full_message(
         user_email: str,
         message_id: str,
@@ -144,97 +139,6 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
 
         return {"enriched_messages": enriched, "current_node": "enrich_messages"}
 
-    async def analyze_messages(state: PipelineState) -> dict:
-        user_email = state["user_email"]
-        messages = state.get("enriched_messages") or state.get("messages") or []
-        if not messages or not llm_configured(ctx.settings):
-            return {
-                "classifications": [],
-                "draft_replies": {},
-                "current_node": "analyze_messages",
-            }
-
-        rules = state.get("classification_rules")
-        if not rules:
-            raise ValueError("Classification rules are not loaded")
-
-        related_by_id: dict[str, list[dict[str, Any]]] = {}
-        for message in messages:
-            msg_id = str(message.get("id", ""))
-            try:
-                thread_messages = await ctx.email_service.search_thread_messages(
-                    user_email,
-                    message.get("subject"),
-                    exclude_id=msg_id,
-                    limit=4,
-                )
-                related_by_id[msg_id] = [
-                    item.model_dump(by_alias=True) for item in thread_messages
-                ]
-            except Exception:
-                related_by_id[msg_id] = []
-
-        try:
-            classifications, drafts = await MessageAnalysisService(
-                ctx.settings
-            ).analyze_batch(
-                messages,
-                classification_rules=state["classification_rules"],
-                related_by_id=related_by_id,
-                agent_training=state.get("agent_training"),
-                draft_reply_rules=state.get("draft_reply_rules"),
-            )
-        except Exception as exc:
-            logger.exception("Message analysis failed")
-            classifications = []
-            drafts = {}
-
-        return {
-            "classifications": classifications,
-            "draft_replies": drafts,
-            "current_node": "analyze_messages",
-        }
-
-    async def resolve_routes(state: PipelineState) -> dict:
-        account = state["user_email"]
-        classifications = state.get("classifications") or []
-        resolved = await ctx.resolver.resolve_routes_async(classifications, account)
-        return {"classifications": resolved, "current_node": "resolve_routes"}
-
-    async def apply_actions(state: PipelineState) -> dict:
-        account = state["user_email"]
-        messages = state.get("enriched_messages") or state.get("messages") or []
-        classifications = state.get("classifications") or []
-        conn = _pipeline_conn(state)
-
-        if not ctx.email_repository or conn is None:
-            return {
-                "actions_taken": [],
-                "action_errors": ["email_repository not configured"],
-                "current_node": "apply_actions",
-            }
-
-        actions, errors = await ctx.executor.apply_all(
-            conn,
-            account,
-            messages,
-            classifications,
-            force_reprocess=bool(state.get("force_reprocess")),
-            automation_thread_id=state.get("automation_thread_id"),
-            report=state.get("report"),
-            draft_replies=state.get("draft_replies") or {},
-        )
-        zimbra_ids = [c["message_id"] for c in classifications]
-        await ctx.email_repository.mark_analyzed(conn, account, zimbra_ids)
-        if hasattr(conn, "commit"):
-            await conn.commit()
-
-        return {
-            "actions_taken": actions,
-            "action_errors": errors,
-            "current_node": "apply_actions",
-        }
-
     async def format_run_report(state: PipelineState) -> dict:
         classifications = state.get("classifications") or []
         actions = state.get("actions_taken") or []
@@ -267,8 +171,5 @@ def make_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
     return {
         "ingest_mailbox": ingest_mailbox,
         "enrich_messages": enrich_messages,
-        "analyze_messages": analyze_messages,
-        "resolve_routes": resolve_routes,
-        "apply_actions": apply_actions,
         "format_run_report": format_run_report,
     }

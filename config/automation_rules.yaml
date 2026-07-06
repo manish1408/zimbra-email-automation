@@ -1,0 +1,65 @@
+rules:
+  - id: mailer_daemon_undelivered
+    enabled: true
+    priority: 10
+    match:
+      from_address: "MAILER-DAEMON@mail-tibolli.vantibolli.com"
+    actions:
+      move_to_folder: Undelivered
+      skip_llm: true
+      mark_analyzed: true
+
+  - id: gk_hair_noreply_ignore
+    enabled: true
+    priority: 20
+    match:
+      from_address: "no-reply@gkhair.com"
+    actions:
+      no_action: true
+      skip_llm: true
+      mark_analyzed: true
+      set_category: ignored_noreply
+
+  - id: facebook_notifications_platform
+    enabled: true
+    priority: 21
+    match:
+      from_address: "notification@facebookmail.com"
+    actions:
+      move_to_folder: Platform Notifications
+      skip_llm: true
+      mark_analyzed: true
+      set_category: platform_notification
+
+  - id: shopify_audiences_platform_notifications
+    enabled: true
+    priority: 30
+    match:
+      from_address: "no-reply-audiences@shopify.com"
+    actions:
+      move_to_folder: Platform Notifications
+      skip_llm: true
+      mark_analyzed: true
+      set_category: platform_notification
+
+  - id: postscript_conversations_platform
+    enabled: true
+    priority: 31
+    match:
+      from_address_regex: "^conversations\\+.*@postscript\\.io$"
+    actions:
+      move_to_folder: Platform Notifications
+      skip_llm: true
+      mark_analyzed: true
+      set_category: platform_notification
+
+  - id: didww_sms_forwarding_platform
+    enabled: true
+    priority: 32
+    match:
+      from_address: "sms-forwarding@didww.com"
+    actions:
+      move_to_folder: Platform Notifications
+      skip_llm: true
+      mark_analyzed: true
+      set_category: platform_notification

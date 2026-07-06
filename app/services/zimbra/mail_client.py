@@ -10,6 +10,7 @@ import httpx
 from app.config import Settings
 from app.services.zimbra.soap import (
     ZIMBRA_MAIL_NS,
+    ZimbraSoapError,
     build_envelope,
     escape_xml,
     find_all,
@@ -313,20 +314,65 @@ class ZimbraMailClient:
         name: str,
         parent_id: str = INBOX_FOLDER_ID,
     ) -> str:
-        folders = await self.list_folders(auth_token=auth_token, account_name=account_name)
-        for folder in folders:
-            if folder.name.lower() == name.lower():
-                return folder.id
-        return await self.create_folder(
+        return await self.ensure_folder(
             auth_token=auth_token,
             account_name=account_name,
             name=name,
             parent_id=parent_id,
         )
 
+    async def ensure_folder(
+        self,
+        auth_token: str,
+        account_name: str,
+        name: str,
+        parent_id: str = INBOX_FOLDER_ID,
+        *,
+        force_create: bool = False,
+    ) -> str:
+        """Return folder id, creating the folder under Inbox when it does not exist."""
+        if not force_create:
+            folders = await self.list_folders(
+                auth_token=auth_token, account_name=account_name
+            )
+            folder_id = self.find_folder_id(folders, name)
+            if folder_id:
+                return folder_id
+
+        try:
+            return await self.create_folder(
+                auth_token=auth_token,
+                account_name=account_name,
+                name=name,
+                parent_id=parent_id,
+            )
+        except (ZimbraSoapError, RuntimeError) as exc:
+            if not _is_folder_exists_error(exc):
+                raise
+            folders = await self.list_folders(
+                auth_token=auth_token, account_name=account_name
+            )
+            folder_id = self.find_folder_id(folders, name)
+            if folder_id:
+                return folder_id
+            raise
+
+    @staticmethod
+    def folder_matches(folder: ZimbraFolder, name: str) -> bool:
+        target = name.strip().lower()
+        if folder.name.lower() == target:
+            return True
+        raw_path = (folder.path or "").strip("/")
+        if not raw_path:
+            return False
+        path_lower = raw_path.lower()
+        if path_lower == target:
+            return True
+        return path_lower.endswith(f"/{target}")
+
     def find_folder_id(self, folders: list[ZimbraFolder], name: str) -> str | None:
         for folder in folders:
-            if folder.name.lower() == name.lower():
+            if self.folder_matches(folder, name):
                 return folder.id
         return None
 
@@ -436,3 +482,11 @@ class ZimbraMailClient:
             elif match.text and "@" in match.text:
                 matches.append(match.text.strip())
         return matches
+
+
+def _is_folder_exists_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        token in message
+        for token in ("exist", "already", "duplicate", "name not unique")
+    )

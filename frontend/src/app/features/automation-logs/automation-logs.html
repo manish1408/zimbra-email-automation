@@ -1,0 +1,255 @@
+<div class="container py-4 automation-logs-page">
+  <h1 class="h3 mb-2">Automation Logs</h1>
+  <p class="text-muted mb-4">Per-email automation run history with timing, traces, and retry.</p>
+
+  @if (error) {
+    <div class="alert alert-danger py-2 small">{{ error }}</div>
+  }
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-5">
+          <label class="form-label small mb-1" for="logUserSelect">Mailbox</label>
+          <select
+            id="logUserSelect"
+            class="form-select form-select-sm"
+            [ngModel]="selectedEmail"
+            (ngModelChange)="onUserSelect($event)"
+            [disabled]="loadingUsers"
+          >
+            <option value="">Select account…</option>
+            @for (user of users; track user.id) {
+              <option [value]="user.email">{{ user.email }}</option>
+            }
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small mb-1" for="statusFilter">Status</label>
+          <select
+            id="statusFilter"
+            class="form-select form-select-sm"
+            [(ngModel)]="statusFilter"
+            (ngModelChange)="onStatusFilterChange()"
+            [disabled]="!selectedEmail"
+          >
+            <option value="">All</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+            <option value="skipped">Skipped</option>
+          </select>
+        </div>
+        <div class="col-md-4 text-md-end">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary"
+            [disabled]="!selectedEmail || loading"
+            (click)="loadLogs()"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  @if (!selectedEmail) {
+    <p class="text-muted">Select a mailbox to view automation logs.</p>
+  } @else if (loading) {
+    <div class="text-center py-5">
+      <div class="spinner-border text-primary" role="status"></div>
+      <p class="text-muted small mt-2 mb-0">Loading logs…</p>
+    </div>
+  } @else if (!logs.length) {
+    <p class="text-muted">No automation logs found for this mailbox.</p>
+  } @else {
+    <div class="table-responsive card shadow-sm">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Time</th>
+            <th>Subject</th>
+            <th>From</th>
+            <th>Status</th>
+            <th>Duration</th>
+            <th>LLM</th>
+            <th>Actions</th>
+            <th>Error</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (log of logs; track log.id) {
+            <tr class="log-row" (click)="openDetail(log)">
+              <td class="small text-nowrap">{{ formatDate(log.created_at) }}</td>
+              <td class="text-truncate" style="max-width: 14rem">
+                {{ log.subject || '(no subject)' }}
+              </td>
+              <td class="small text-truncate" style="max-width: 10rem">
+                {{ log.from_address || '—' }}
+              </td>
+              <td>
+                <span class="badge text-capitalize" [ngClass]="statusClass(log.status)">
+                  {{ log.status }}
+                </span>
+                @if (log.dry_run) {
+                  <span class="badge text-bg-warning ms-1">dry</span>
+                }
+              </td>
+              <td class="small">{{ formatMs(log.duration_ms) }}</td>
+              <td class="small">{{ formatMs(log.llm_duration_ms) }}</td>
+              <td class="small">{{ actionsSummary(log) }}</td>
+              <td class="small text-danger text-truncate" style="max-width: 12rem">
+                {{ log.error || '—' }}
+              </td>
+              <td class="text-end">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  [disabled]="retryingId === log.id"
+                  (click)="retry(log, $event)"
+                >
+                  @if (retryingId === log.id) {
+                    <span class="spinner-border spinner-border-sm"></span>
+                  } @else {
+                    Retry
+                  }
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mt-3">
+      <span class="small text-muted">
+        Showing {{ offset + 1 }}–{{ offset + logs.length }} of {{ total }}
+      </span>
+      <div class="btn-group btn-group-sm">
+        <button type="button" class="btn btn-outline-secondary" [disabled]="offset <= 0" (click)="prevPage()">
+          Previous
+        </button>
+        <button type="button" class="btn btn-outline-secondary" [disabled]="!hasMore" (click)="nextPage()">
+          Next
+        </button>
+      </div>
+    </div>
+  }
+</div>
+
+@if (detailOpen && selectedLog) {
+  <div class="modal fade show d-block" tabindex="-1" role="dialog" aria-modal="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title">Automation details</h5>
+            <p class="small text-muted mb-0">{{ selectedLog.subject || '(no subject)' }}</p>
+          </div>
+          <button type="button" class="btn-close" aria-label="Close" (click)="closeDetail()"></button>
+        </div>
+        <div class="modal-body">
+          @if (selectedLog.dry_run) {
+            <div class="alert alert-warning py-2 small">Dry run — no Zimbra changes were applied</div>
+          }
+
+          <dl class="row small mb-3">
+            <dt class="col-sm-3">Message ID</dt>
+            <dd class="col-sm-9"><code>{{ selectedLog.message_id }}</code></dd>
+            <dt class="col-sm-3">Thread</dt>
+            <dd class="col-sm-9"><code class="small">{{ selectedLog.thread_id }}</code></dd>
+            <dt class="col-sm-3">Status</dt>
+            <dd class="col-sm-9">
+              <span class="badge text-capitalize" [ngClass]="statusClass(selectedLog.status)">
+                {{ selectedLog.status }}
+              </span>
+            </dd>
+            <dt class="col-sm-3">Timing</dt>
+            <dd class="col-sm-9">
+              Total {{ formatMs(selectedLog.duration_ms) }} · LLM {{ formatMs(selectedLog.llm_duration_ms) }}
+            </dd>
+            <dt class="col-sm-3">From</dt>
+            <dd class="col-sm-9">{{ selectedLog.from_address || '—' }}</dd>
+            <dt class="col-sm-3">Ran at</dt>
+            <dd class="col-sm-9">{{ formatDate(selectedLog.created_at) }}</dd>
+          </dl>
+
+          @if (selectedLog.error) {
+            <div class="alert alert-danger py-2 small mb-3">{{ selectedLog.error }}</div>
+          }
+
+          @if (selectedLog.classification) {
+            <div class="card mb-3">
+              <div class="card-header py-2 small fw-semibold">Classification</div>
+              <div class="card-body py-2">
+                <pre class="small mb-0">{{ selectedLog.classification | json }}</pre>
+              </div>
+            </div>
+          }
+
+          @if (traceSteps(selectedLog).length) {
+            <div class="card mb-3">
+              <div class="card-header py-2 small fw-semibold">Automation trace</div>
+              <div class="card-body py-2">
+                <table class="table table-sm small mb-0">
+                  <thead>
+                    <tr>
+                      <th>Step</th>
+                      <th>Action</th>
+                      <th>Status</th>
+                      <th>Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (step of traceSteps(selectedLog); track $index) {
+                      <tr>
+                        <td>{{ step['step'] }}</td>
+                        <td>{{ step['action'] }}</td>
+                        <td>
+                          <span
+                            class="badge"
+                            [class.text-bg-success]="step['success']"
+                            [class.text-bg-danger]="!step['success']"
+                          >
+                            {{ step['success'] ? 'ok' : 'fail' }}
+                          </span>
+                        </td>
+                        <td>{{ formatMs($any(step['duration_ms'])) }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          }
+
+          @if (selectedLog.actions) {
+            <div class="card mb-3">
+              <div class="card-header py-2 small fw-semibold">Actions taken</div>
+              <div class="card-body py-2">
+                <pre class="small mb-0">{{ selectedLog.actions | json }}</pre>
+              </div>
+            </div>
+          }
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            [disabled]="retryingId === selectedLog.id"
+            (click)="retry(selectedLog)"
+          >
+            @if (retryingId === selectedLog.id) {
+              Retrying…
+            } @else {
+              Retry automation
+            }
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" (click)="closeDetail()">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop fade show" (click)="closeDetail()"></div>
+}

@@ -101,6 +101,7 @@ async def get_message_metadata(
             draft_reply_text=action.get("draft_reply_text"),
             ack_body_text=action.get("ack_body_text"),
             report=action.get("report"),
+            automation_trace=action.get("automation_trace"),
             error=action.get("error"),
             processed_at=action.get("processed_at"),
             analyzed_at=analyzed_at,

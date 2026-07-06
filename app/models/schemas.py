@@ -189,6 +189,7 @@ class MessageMetadata(BaseModel):
     draft_reply_text: str | None = None
     ack_body_text: str | None = None
     report: dict | None = None
+    automation_trace: dict | None = None
     error: str | None = None
     processed_at: str | None = None
     analyzed_at: str | None = None
@@ -208,7 +209,36 @@ class MessageAutomationRunSummary(BaseModel):
     draft_reply_text: str | None = None
     ack_body_text: str | None = None
     error: str | None = None
+    duration_ms: int | None = None
+    llm_duration_ms: int | None = None
+    automation_trace: dict | None = None
     created_at: str | None = None
+
+
+class AutomationLogEntry(BaseModel):
+    id: int
+    message_id: str
+    thread_id: str
+    status: str
+    dry_run: bool = False
+    subject: str | None = None
+    from_address: str | None = None
+    duration_ms: int | None = None
+    llm_duration_ms: int | None = None
+    classification: dict | None = None
+    actions: dict | None = None
+    error: str | None = None
+    automation_trace: dict | None = None
+    created_at: str | None = None
+
+
+class AutomationLogListResponse(BaseModel):
+    account: str
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+    logs: list[AutomationLogEntry]
 
 
 class MessageAutomationResult(BaseModel):
@@ -224,6 +254,7 @@ class MessageAutomationResult(BaseModel):
     report: dict = Field(default_factory=dict)
     error: str | None = None
     processed_at: str | None = None
+    automation_trace: dict | None = None
     runs: list[MessageAutomationRunSummary] = Field(default_factory=list)
 
 

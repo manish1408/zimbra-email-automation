@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import re
 import time
@@ -17,8 +18,24 @@ from app.config import Settings
 
 T = TypeVar("T", bound=BaseModel)
 
+_llm_duration_ms: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "llm_duration_ms", default=0
+)
+
 _RETRYABLE_HTTP_STATUS = frozenset({502, 503, 524})
 _MAX_LLM_ATTEMPTS = 3
+
+
+def reset_llm_duration() -> None:
+    _llm_duration_ms.set(0)
+
+
+def get_llm_duration_ms() -> int:
+    return _llm_duration_ms.get()
+
+
+def _add_llm_duration(elapsed_ms: int) -> None:
+    _llm_duration_ms.set(_llm_duration_ms.get() + elapsed_ms)
 
 
 def _messages_to_prompt(messages: list[BaseMessage]) -> str:
@@ -61,25 +78,29 @@ async def ainvoke_structured(
     messages: list[BaseMessage],
 ) -> T:
     """Structured output for OpenAI native models and JSON-prompt fallback for Vast AI."""
-    if isinstance(llm, ChatOpenAI):
-        structured = llm.with_structured_output(schema)
-        return await structured.ainvoke(messages)
+    started = time.perf_counter()
+    try:
+        if isinstance(llm, ChatOpenAI):
+            structured = llm.with_structured_output(schema)
+            return await structured.ainvoke(messages)
 
-    schema_hint = json.dumps(schema.model_json_schema(), indent=2)
-    augmented = [
-        *messages,
-        HumanMessage(
-            content=(
-                "Return ONLY valid JSON matching this schema. "
-                "No markdown fences, no commentary, no extra keys.\n"
-                f"{schema_hint}"
-            )
-        ),
-    ]
-    result = await llm.ainvoke(augmented)
-    content = result.content if isinstance(result, AIMessage) else str(getattr(result, "content", result))
-    data = _extract_json_object(str(content))
-    return schema.model_validate(data)
+        schema_hint = json.dumps(schema.model_json_schema(), indent=2)
+        augmented = [
+            *messages,
+            HumanMessage(
+                content=(
+                    "Return ONLY valid JSON matching this schema. "
+                    "No markdown fences, no commentary, no extra keys.\n"
+                    f"{schema_hint}"
+                )
+            ),
+        ]
+        result = await llm.ainvoke(augmented)
+        content = result.content if isinstance(result, AIMessage) else str(getattr(result, "content", result))
+        data = _extract_json_object(str(content))
+        return schema.model_validate(data)
+    finally:
+        _add_llm_duration(int((time.perf_counter() - started) * 1000))
 
 
 class VastAIChatModel(BaseChatModel):

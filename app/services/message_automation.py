@@ -55,6 +55,9 @@ def _run_summary(run: dict[str, Any]) -> MessageAutomationRunSummary:
         draft_reply_text=run.get("draft_reply_text"),
         ack_body_text=run.get("ack_body_text"),
         error=run.get("error"),
+        duration_ms=run.get("duration_ms"),
+        llm_duration_ms=run.get("llm_duration_ms"),
+        automation_trace=run.get("automation_trace"),
         created_at=run.get("created_at"),
     )
 
@@ -80,6 +83,7 @@ def _result_from_db(
     draft_reply_text = None
     ack_body_text = None
     processed_at = None
+    automation_trace = None
     latest_run = runs[0] if runs else None
 
     if action:
@@ -97,6 +101,7 @@ def _result_from_db(
         draft_reply_text = action.get("draft_reply_text")
         ack_body_text = action.get("ack_body_text")
         processed_at = action.get("processed_at")
+        automation_trace = action.get("automation_trace")
         thread_id = thread_id or action.get("automation_thread_id")
         report = report or action.get("report")
         error = error or action.get("error")
@@ -116,6 +121,8 @@ def _result_from_db(
             status = latest_run.get("status") or "completed"
         if not thread_id:
             thread_id = latest_run.get("thread_id")
+        if not error:
+            error = latest_run.get("error")
 
     if runs and not thread_id:
         thread_id = runs[0].get("thread_id")
@@ -133,6 +140,7 @@ def _result_from_db(
         report=report or {},
         error=error,
         processed_at=processed_at,
+        automation_trace=automation_trace,
         runs=[_run_summary(r) for r in runs],
     )
 
@@ -241,21 +249,6 @@ class MessageAutomationService:
             draft_reply_text = action.get("draft_reply_text") if action else None
             ack_body_text = action.get("ack_body_text") if action else None
 
-            await self._persist_run(
-                account,
-                message_id,
-                thread_id,
-                status=status,
-                dry_run=dry_run,
-                classification=dict(classification) if classification else None,
-                actions=_actions_from_action_taken(action),
-                draft_reply_text=draft_reply_text,
-                ack_body_text=ack_body_text,
-                report=report,
-                error=error,
-                conn=conn,
-            )
-
             return MessageAutomationResult(
                 account=account,
                 message_id=message_id,
@@ -269,6 +262,7 @@ class MessageAutomationService:
                 report=report,
                 error=error,
                 processed_at=None,
+                automation_trace=action.get("automation_trace") if action else None,
             )
         finally:
             await conn.close()
@@ -325,6 +319,26 @@ class MessageAutomationService:
         finally:
             await conn.close()
         return [_run_summary(r) for r in runs]
+
+    async def list_automation_logs(
+        self,
+        account: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        conn = await self.repository.connect()
+        try:
+            return await self.repository.list_automation_logs(
+                conn,
+                account,
+                limit=limit,
+                offset=offset,
+                status=status,
+            )
+        finally:
+            await conn.close()
 
     async def _persist_run(
         self,

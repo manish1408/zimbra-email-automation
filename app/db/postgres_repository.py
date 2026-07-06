@@ -245,6 +245,7 @@ class PostgresEmailRepository:
         ack_body_text: str | None = None,
         automation_thread_id: str | None = None,
         report_json: dict[str, Any] | None = None,
+        automation_trace: dict[str, Any] | None = None,
     ) -> None:
         now = _utc_now()
         ack_ts = None
@@ -256,15 +257,16 @@ class PostgresEmailRepository:
             )
         classification_json = json.dumps(classification) if classification else None
         report_str = json.dumps(report_json, default=str) if report_json else None
+        trace_str = json.dumps(automation_trace, default=str) if automation_trace else None
         await conn.execute(
             """
             INSERT INTO message_actions (
                 zimbra_id, account, category, is_spam, folder_path,
                 forwarded_to, ack_sent_at, draft_saved, classification_json,
                 error, processed_at, draft_reply_text, ack_body_text,
-                automation_thread_id, report_json
+                automation_thread_id, report_json, automation_trace_json
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11,
-                      $12, $13, $14, $15::jsonb)
+                      $12, $13, $14, $15::jsonb, $16::jsonb)
             ON CONFLICT (zimbra_id, account) DO UPDATE SET
                 category = EXCLUDED.category,
                 is_spam = EXCLUDED.is_spam,
@@ -278,7 +280,8 @@ class PostgresEmailRepository:
                 draft_reply_text = EXCLUDED.draft_reply_text,
                 ack_body_text = EXCLUDED.ack_body_text,
                 automation_thread_id = EXCLUDED.automation_thread_id,
-                report_json = EXCLUDED.report_json
+                report_json = EXCLUDED.report_json,
+                automation_trace_json = EXCLUDED.automation_trace_json
             """,
             zimbra_id,
             account,
@@ -295,6 +298,7 @@ class PostgresEmailRepository:
             ack_body_text,
             automation_thread_id,
             report_str,
+            trace_str,
         )
 
     async def get_message_action(
@@ -322,14 +326,27 @@ class PostgresEmailRepository:
         ack_body_text: str | None = None,
         report: dict[str, Any] | None = None,
         error: str | None = None,
+        duration_ms: int | None = None,
+        llm_duration_ms: int | None = None,
+        automation_trace: dict[str, Any] | None = None,
+        subject: str | None = None,
+        from_address: str | None = None,
     ) -> int:
+        trace_str = (
+            json.dumps(automation_trace, default=str) if automation_trace else None
+        )
         run_id = await conn.fetchval(
             """
             INSERT INTO message_automation_runs (
                 account, zimbra_id, thread_id, status, dry_run,
                 classification_json, actions_json, draft_reply_text,
-                ack_body_text, report_json, error, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb, $11, $12)
+                ack_body_text, report_json, error, created_at,
+                duration_ms, llm_duration_ms, automation_trace_json,
+                subject, from_address
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb, $11, $12,
+                $13, $14, $15::jsonb, $16, $17
+            )
             RETURNING id
             """,
             account,
@@ -344,8 +361,85 @@ class PostgresEmailRepository:
             json.dumps(report, default=str) if report else None,
             error,
             _utc_now(),
+            duration_ms,
+            llm_duration_ms,
+            trace_str,
+            subject,
+            from_address,
         )
         return int(run_id or 0)
+
+    async def list_automation_logs(
+        self,
+        conn: asyncpg.Connection,
+        account: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        if status:
+            total = int(
+                await conn.fetchval(
+                    """
+                    SELECT COUNT(*) FROM message_automation_runs
+                    WHERE account = $1 AND status = $2
+                    """,
+                    account,
+                    status,
+                )
+                or 0
+            )
+            rows = await conn.fetch(
+                """
+                SELECT
+                    r.id, r.account, r.zimbra_id, r.thread_id, r.status, r.dry_run,
+                    COALESCE(r.subject, m.subject) AS subject,
+                    COALESCE(r.from_address, m.from_address) AS from_address,
+                    r.duration_ms, r.llm_duration_ms,
+                    r.classification_json, r.actions_json, r.error,
+                    r.automation_trace_json, r.created_at
+                FROM message_automation_runs r
+                LEFT JOIN messages m
+                    ON m.account = r.account AND m.zimbra_id = r.zimbra_id
+                WHERE r.account = $1 AND r.status = $2
+                ORDER BY r.created_at DESC
+                LIMIT $3 OFFSET $4
+                """,
+                account,
+                status,
+                limit,
+                offset,
+            )
+        else:
+            total = int(
+                await conn.fetchval(
+                    "SELECT COUNT(*) FROM message_automation_runs WHERE account = $1",
+                    account,
+                )
+                or 0
+            )
+            rows = await conn.fetch(
+                """
+                SELECT
+                    r.id, r.account, r.zimbra_id, r.thread_id, r.status, r.dry_run,
+                    COALESCE(r.subject, m.subject) AS subject,
+                    COALESCE(r.from_address, m.from_address) AS from_address,
+                    r.duration_ms, r.llm_duration_ms,
+                    r.classification_json, r.actions_json, r.error,
+                    r.automation_trace_json, r.created_at
+                FROM message_automation_runs r
+                LEFT JOIN messages m
+                    ON m.account = r.account AND m.zimbra_id = r.zimbra_id
+                WHERE r.account = $1
+                ORDER BY r.created_at DESC
+                LIMIT $2 OFFSET $3
+                """,
+                account,
+                limit,
+                offset,
+            )
+        return [self._automation_log_row_to_dict(row) for row in rows], total
 
     async def get_message_automation_runs(
         self,
@@ -470,6 +564,9 @@ class PostgresEmailRepository:
         report = data.get("report_json")
         if isinstance(report, str):
             report = json.loads(report) if report else None
+        automation_trace = data.get("automation_trace_json")
+        if isinstance(automation_trace, str):
+            automation_trace = json.loads(automation_trace) if automation_trace else None
         ack_sent_at = data.get("ack_sent_at")
         processed_at = data.get("processed_at")
         return {
@@ -486,6 +583,7 @@ class PostgresEmailRepository:
             "ack_body_text": data.get("ack_body_text"),
             "automation_thread_id": data.get("automation_thread_id"),
             "report": report,
+            "automation_trace": automation_trace,
             "error": data.get("error"),
             "processed_at": processed_at.isoformat() if hasattr(processed_at, "isoformat") else processed_at,
         }
@@ -508,10 +606,41 @@ class PostgresEmailRepository:
             "dry_run": row["dry_run"],
             "classification": _load(row["classification_json"]),
             "actions": _load(row["actions_json"]),
-            "draft_reply_text": row["draft_reply_text"],
-            "ack_body_text": row["ack_body_text"],
-            "report": _load(row["report_json"]),
+            "draft_reply_text": row.get("draft_reply_text"),
+            "ack_body_text": row.get("ack_body_text"),
+            "report": _load(row.get("report_json")),
             "error": row["error"],
+            "duration_ms": row.get("duration_ms"),
+            "llm_duration_ms": row.get("llm_duration_ms"),
+            "automation_trace": _load(row.get("automation_trace_json")),
+            "subject": row.get("subject"),
+            "from_address": row.get("from_address"),
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        }
+
+    @staticmethod
+    def _automation_log_row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
+        def _load(raw: Any) -> dict[str, Any] | None:
+            if isinstance(raw, str) and raw:
+                return json.loads(raw)
+            if raw is None:
+                return None
+            return dict(raw) if not isinstance(raw, dict) else raw
+
+        return {
+            "id": row["id"],
+            "message_id": row["zimbra_id"],
+            "thread_id": row["thread_id"],
+            "status": row["status"],
+            "dry_run": row["dry_run"],
+            "subject": row.get("subject"),
+            "from_address": row.get("from_address"),
+            "duration_ms": row.get("duration_ms"),
+            "llm_duration_ms": row.get("llm_duration_ms"),
+            "classification": _load(row.get("classification_json")),
+            "actions": _load(row.get("actions_json")),
+            "error": row.get("error"),
+            "automation_trace": _load(row.get("automation_trace_json")),
             "created_at": row["created_at"].isoformat() if row["created_at"] else None,
         }
 

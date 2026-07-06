@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
+  AutomationLogListResponse,
   MessageAutomationResult,
   MessageAutomationRunListResponse,
 } from '../models/email.models';
@@ -32,6 +33,20 @@ export class AutomationService {
     return this.api.get<MessageAutomationRunListResponse>(
       `${this.basePath(email, messageId)}/runs`,
       { limit },
+    );
+  }
+
+  listLogs(
+    email: string,
+    options: { limit?: number; offset?: number; status?: string } = {},
+  ): Observable<AutomationLogListResponse> {
+    const params: Record<string, string | number> = {};
+    if (options.limit != null) params['limit'] = options.limit;
+    if (options.offset != null) params['offset'] = options.offset;
+    if (options.status) params['status'] = options.status;
+    return this.api.get<AutomationLogListResponse>(
+      `/automation/users/${this.api.encodeEmail(email)}/logs`,
+      params,
     );
   }
 }

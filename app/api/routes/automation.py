@@ -4,6 +4,8 @@ from app.api.deps import get_email_repository, get_email_service, get_settings
 from app.config import Settings
 from app.db.email_repository import EmailRepository
 from app.models.schemas import (
+    AutomationLogEntry,
+    AutomationLogListResponse,
     MailboxAutomationRunResponse,
     MessageAutomationResult,
     MessageAutomationRunListResponse,
@@ -93,6 +95,39 @@ async def list_message_automation_runs(
         account=user_email,
         message_id=message_id,
         runs=runs,
+    )
+
+
+@router.get(
+    "/logs",
+    response_model=AutomationLogListResponse,
+    summary="List automation run logs for a mailbox",
+)
+async def list_automation_logs(
+    user_email: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    status: str | None = Query(default=None, description="Filter by status"),
+    service: MessageAutomationService = Depends(get_automation_service),
+):
+    try:
+        logs, total = await service.list_automation_logs(
+            user_email,
+            limit=limit,
+            offset=offset,
+            status=status,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
+
+    entries = [AutomationLogEntry(**log) for log in logs]
+    return AutomationLogListResponse(
+        account=user_email,
+        total=total,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + len(entries)) < total,
+        logs=entries,
     )
 
 

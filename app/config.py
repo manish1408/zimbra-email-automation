@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     auto_send_ack: bool = False
     save_ack_as_draft: bool = True
 
+    # Shopify Bot API (order / invoice lookups)
+    shopify_bot_base_url: str = "https://bot.gkhair.com"
+    shopify_bot_api_key: str = ""
+    shopify_bot_timeout_seconds: float = 30.0
+
     @property
     def scheme(self) -> str:
         return "https" if self.zimbra_use_https else "http"

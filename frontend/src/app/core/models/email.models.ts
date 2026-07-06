@@ -136,6 +136,7 @@ export interface MessageMetadata {
   error?: string | null;
   processed_at?: string | null;
   analyzed_at?: string | null;
+  automation_trace?: Record<string, unknown> | null;
 }
 
 export interface MessageAutomationRunRequest {
@@ -152,7 +153,36 @@ export interface MessageAutomationRunSummary {
   draft_reply_text?: string | null;
   ack_body_text?: string | null;
   error?: string | null;
+  duration_ms?: number | null;
+  llm_duration_ms?: number | null;
+  automation_trace?: Record<string, unknown> | null;
   created_at?: string | null;
+}
+
+export interface AutomationLogEntry {
+  id: number;
+  message_id: string;
+  thread_id: string;
+  status: string;
+  dry_run: boolean;
+  subject?: string | null;
+  from_address?: string | null;
+  duration_ms?: number | null;
+  llm_duration_ms?: number | null;
+  classification?: Record<string, unknown> | null;
+  actions?: Record<string, unknown> | null;
+  error?: string | null;
+  automation_trace?: Record<string, unknown> | null;
+  created_at?: string | null;
+}
+
+export interface AutomationLogListResponse {
+  account: string;
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+  logs: AutomationLogEntry[];
 }
 
 export interface MessageAutomationResult {
@@ -168,6 +198,7 @@ export interface MessageAutomationResult {
   report: Record<string, unknown>;
   error?: string | null;
   processed_at?: string | null;
+  automation_trace?: Record<string, unknown> | null;
   runs?: MessageAutomationRunSummary[];
 }
 

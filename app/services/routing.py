@@ -71,6 +71,8 @@ class RoutingResolver:
     def should_draft_reply(self, classification: MessageClassification) -> bool:
         if classification.get("is_spam"):
             return False
+        if classification.get("needs_response_generation"):
+            return True
         slug = str(classification.get("category") or "")
         if slug in self.DRAFT_REPLY_CATEGORIES:
             return True
@@ -78,6 +80,16 @@ class RoutingResolver:
             return True
         rule = self.resolve_category_rule(slug)
         return rule.needs_live_agent if rule else False
+
+    def should_forward(self, classification: MessageClassification) -> bool:
+        if classification.get("is_spam"):
+            return False
+        if "needs_forwarding" in classification:
+            return bool(classification.get("needs_forwarding"))
+        rule = self.resolve_category_rule(classification.get("category", ""))
+        if rule and rule.skip_forward:
+            return False
+        return not classification.get("is_spam")
 
     def _lookup_employee(self, name: str) -> str | None:
         return self.rules.employee_index().get(name.strip().lower())

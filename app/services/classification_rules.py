@@ -74,10 +74,9 @@ class ClassificationRules:
     def build_classification_prompt(self) -> str:
         lines = [
             "Classify each email using exactly one category slug from the list below.",
-            "For every message return: category (slug), is_spam, confidence, "
-            "requested_person, needs_live_agent, reasoning, and draft_reply_text for "
-            "customer_support and orders (conversation-based reply drafts), or when "
-            "needs_live_agent is true; otherwise null.",
+            "Return: category, is_spam, confidence, requested_person, needs_live_agent, "
+            "is_invoice_question, is_order_status_question, needs_response_generation, "
+            "needs_forwarding, reasoning.",
             "",
         ]
         instructions = (self.config.classification_instructions or "").strip()
@@ -86,23 +85,10 @@ class ClassificationRules:
 
         lines.append("Categories:")
         for category in self.enabled_categories():
-            lines.append(f"- **{category.slug}** ({category.display_name}): {category.classification_hints}")
-            actions: list[str] = [f"folder={category.folder}"]
-            if category.is_spam:
-                actions.append("is_spam=true")
-            if category.skip_forward or category.is_spam:
-                actions.append("no forward")
-            elif category.forward_to:
-                actions.append(f"forward={category.forward_to}")
-            elif self.config.default_forward:
-                actions.append(f"forward default={self.config.default_forward}")
-            if category.route_by_person:
-                actions.append("resolve person from requested_person")
-            if category.needs_live_agent:
-                actions.append("needs_live_agent=true")
-            if not category.send_ack:
-                actions.append("no acknowledgement")
-            lines.append(f"  Actions when matched: {', '.join(actions)}.")
+            lines.append(
+                f"- **{category.slug}** ({category.display_name}): "
+                f"{category.classification_hints}"
+            )
 
         return "\n".join(lines)
 
