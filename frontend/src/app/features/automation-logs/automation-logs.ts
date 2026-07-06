@@ -1,9 +1,14 @@
-import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject } from '@angular/core';
+import { CommonModule, DOCUMENT } from '@angular/common';
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
+import { catchError, of } from 'rxjs';
 import { formatMailDate } from '../../core/format-date';
-import { AutomationLogEntry, User } from '../../core/models/email.models';
+import {
+  AutomationLogEntry,
+  MessageAutomationResult,
+  User,
+} from '../../core/models/email.models';
 import { AutomationService } from '../../core/services/automation.service';
 import { UsersService } from '../../core/services/users.service';
 
@@ -14,17 +19,21 @@ import { UsersService } from '../../core/services/users.service';
   templateUrl: './automation-logs.html',
   styleUrl: './automation-logs.scss',
 })
-export class AutomationLogsComponent implements OnInit {
+export class AutomationLogsComponent implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly usersService = inject(UsersService);
   private readonly automationService = inject(AutomationService);
+  private readonly document = inject(DOCUMENT);
 
   users: User[] = [];
   selectedEmail = '';
   logs: AutomationLogEntry[] = [];
   selectedLog: AutomationLogEntry | null = null;
+  detailResult: MessageAutomationResult | null = null;
   detailOpen = false;
+  detailLoading = false;
+  showRawJson = false;
 
   total = 0;
   limit = 50;
@@ -50,6 +59,14 @@ export class AutomationLogsComponent implements OnInit {
         this.logs = [];
       }
     });
+  }
+
+  ngOnDestroy(): void {
+    this.setBodyScrollLock(false);
+  }
+
+  private setBodyScrollLock(locked: boolean): void {
+    this.document.body.classList.toggle('overflow-hidden', locked);
   }
 
   loadUsers(): void {
@@ -120,14 +137,47 @@ export class AutomationLogsComponent implements OnInit {
     this.loadLogs();
   }
 
-  openDetail(log: AutomationLogEntry): void {
+  openDetail(log: AutomationLogEntry, event?: Event): void {
+    event?.stopPropagation();
     this.selectedLog = log;
+    this.detailResult = null;
     this.detailOpen = true;
+    this.detailLoading = true;
+    this.showRawJson = false;
+    this.setBodyScrollLock(true);
+
+    if (!this.selectedEmail) {
+      this.detailLoading = false;
+      return;
+    }
+
+    this.automationService
+      .getResult(this.selectedEmail, log.message_id)
+      .pipe(catchError(() => of(null)))
+      .subscribe({
+        next: (res) => {
+          this.detailResult = res;
+          this.detailLoading = false;
+        },
+        error: () => {
+          this.detailLoading = false;
+        },
+      });
   }
 
   closeDetail(): void {
     this.detailOpen = false;
     this.selectedLog = null;
+    this.detailResult = null;
+    this.detailLoading = false;
+    this.setBodyScrollLock(false);
+  }
+
+  openInInbox(log: AutomationLogEntry, event?: Event): void {
+    event?.stopPropagation();
+    if (!this.selectedEmail) return;
+    this.closeDetail();
+    this.router.navigate(['/inbox', encodeURIComponent(this.selectedEmail)]);
   }
 
   retry(log: AutomationLogEntry, event?: Event): void {
@@ -138,6 +188,9 @@ export class AutomationLogsComponent implements OnInit {
       next: () => {
         this.retryingId = null;
         this.loadLogs();
+        if (this.detailOpen && this.selectedLog?.id === log.id) {
+          this.openDetail(log);
+        }
       },
       error: (err) => {
         this.error = err?.error?.detail ?? 'Retry failed';
@@ -169,6 +222,27 @@ export class AutomationLogsComponent implements OnInit {
     }
   }
 
+  categoryClass(category?: string | null): string {
+    const map: Record<string, string> = {
+      spam: 'bg-danger',
+      marketing: 'bg-info text-dark',
+      customer_support: 'bg-primary',
+      billing: 'bg-warning text-dark',
+      logistics: 'bg-secondary',
+      careers: 'bg-success',
+      orders: 'bg-dark',
+      enquiry: 'bg-light text-dark border',
+      general: 'bg-light text-dark border',
+    };
+    return map[category ?? ''] ?? 'bg-light text-dark border';
+  }
+
+  confidencePercent(value: unknown): string {
+    const n = typeof value === 'number' ? value : Number(value);
+    if (Number.isNaN(n)) return '—';
+    return `${Math.round(n * 100)}%`;
+  }
+
   actionsSummary(log: AutomationLogEntry): string {
     const actions = log.actions;
     if (!actions) return '—';
@@ -180,8 +254,30 @@ export class AutomationLogsComponent implements OnInit {
     return parts.length ? parts.join(', ') : actions['folder_path'] ? 'folder set' : '—';
   }
 
-  traceSteps(log: AutomationLogEntry): Array<Record<string, unknown>> {
+  traceSteps(log: AutomationLogEntry | null): Array<Record<string, unknown>> {
+    if (!log) return [];
     const steps = log.automation_trace?.['steps'];
     return Array.isArray(steps) ? steps : [];
+  }
+
+  detailClassification(): Record<string, unknown> | null {
+    return this.selectedLog?.classification ?? this.detailResult?.classification ?? null;
+  }
+
+  detailActions(): Record<string, unknown> | null {
+    return this.selectedLog?.actions ?? this.detailResult?.actions ?? null;
+  }
+
+  detailDraftText(): string | null {
+    return this.detailResult?.draft_reply_text ?? null;
+  }
+
+  detailAckText(): string | null {
+    return this.detailResult?.ack_body_text ?? null;
+  }
+
+  stepError(step: Record<string, unknown>): string | null {
+    const err = step['error'];
+    return typeof err === 'string' && err ? err : null;
   }
 }

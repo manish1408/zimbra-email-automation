@@ -138,17 +138,21 @@
           </div>
         </div>
 
-        @if (result.automation_trace?.['steps']?.length) {
+        @if (traceSteps().length) {
           <div class="result-card card mb-3">
             <div class="card-header py-2">Automation trace</div>
             <div class="card-body py-3">
               <ul class="list-unstyled small mb-0">
-                @for (step of $any(result.automation_trace?.['steps']); track $index) {
+                @for (step of traceSteps(); track $index) {
                   <li class="mb-1">
-                    <span class="badge" [class.text-bg-success]="step.success" [class.text-bg-danger]="!step.success">
-                      {{ step.step }}
+                    <span
+                      class="badge"
+                      [class.text-bg-success]="step['success']"
+                      [class.text-bg-danger]="!step['success']"
+                    >
+                      {{ step['step'] }}
                     </span>
-                    <span class="ms-1">{{ step.action }}</span>
+                    <span class="ms-1">{{ step['action'] }}</span>
                   </li>
                 }
               </ul>

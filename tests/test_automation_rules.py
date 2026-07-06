@@ -32,6 +32,17 @@ def test_mailer_daemon_moves_to_undelivered(rules):
     assert result.rule_id == "mailer_daemon_undelivered"
     assert result.move_to_folder == "Undelivered"
     assert result.skip_llm
+    assert result.set_category == "undelivered"
+
+
+def test_mailer_daemon_regex_matches_any_domain(rules):
+    message = {
+        "from": "MAILER-DAEMON@other-mail-host.example.com",
+        "subject": "Delivery Status Notification",
+    }
+    result = evaluate_message(message, rules)
+    assert result.matched
+    assert result.rule_id == "mailer_daemon_undelivered"
 
 
 def test_gk_noreply_no_action(rules):

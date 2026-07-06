@@ -166,4 +166,9 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
     };
     return map[status] ?? 'text-bg-light border text-dark';
   }
+
+  traceSteps(): Array<Record<string, unknown>> {
+    const steps = this.result?.automation_trace?.['steps'];
+    return Array.isArray(steps) ? steps : [];
+  }
 }

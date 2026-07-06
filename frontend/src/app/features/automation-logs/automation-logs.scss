@@ -1,8 +1,81 @@
-.log-row {
-  cursor: pointer;
+:host {
+  display: contents;
 }
 
-.automation-logs-page pre {
+.log-row {
+  cursor: pointer;
+
+  &:hover {
+    background-color: rgba(var(--bs-primary-rgb), 0.04);
+  }
+}
+
+.log-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1040;
+  background-color: rgba(15, 23, 42, 0.45);
+}
+
+.log-detail-offcanvas {
+  --bs-offcanvas-width: min(640px, 100vw);
+  top: var(--app-navbar-height);
+  height: calc(100vh - var(--app-navbar-height));
+  z-index: 1045;
+  border-left: 1px solid var(--mail-border);
+  box-shadow: -8px 0 32px rgba(15, 23, 42, 0.12);
+}
+
+.automation-logs-page pre,
+.log-detail-offcanvas pre {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.log-detail-offcanvas {
+  .header-copy {
+    min-width: 0;
+    padding-right: 0.5rem;
+  }
+
+  .message-subject {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--mail-text);
+  }
+
+  .message-meta {
+    color: var(--mail-muted);
+  }
+
+  .meta-sep {
+    margin: 0 0.35rem;
+  }
+
+  .meta-dl dt {
+    color: var(--mail-muted);
+  }
+
+  .draft-block {
+    max-height: 12rem;
+    overflow: auto;
+    background: #f8fafc;
+    border: 1px solid var(--mail-border);
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+  }
+
+  .trace-table td,
+  .trace-table th {
+    vertical-align: middle;
+  }
+
+  .detail-toolbar {
+    background: #f8fafc;
+    flex-shrink: 0;
+  }
+
+  .detail-content {
+    background: #fff;
+  }
 }

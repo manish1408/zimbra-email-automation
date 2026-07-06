@@ -13,6 +13,7 @@ from app.services.classification_service import ClassificationService
 from app.services.draft_service import DraftService, build_shopify_context_payload
 from app.services.email_thread import build_thread_context
 from app.services.llm import llm_configured
+from app.services.automation_run_logs import persist_message_automation_logs
 from app.services.shopify.bot_client import OrderNotFoundError, ShopifyBotClient, ShopifyBotError
 from app.services.shopify.order_reference import extract_order_reference
 
@@ -179,16 +180,36 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                         folder=result.move_to_folder,
                     )
                 except Exception as exc:
-                    record["error"] = str(exc)
-                    errors.append(f"{msg_id}: {exc}")
-                    _trace(
-                        traces,
-                        msg_id,
-                        "apply_automation_rules",
-                        "move_to_folder",
-                        False,
-                        error=str(exc),
-                    )
+                    if result.skip_llm:
+                        logger.warning(
+                            "Non-fatal rule folder move failed for %s → %s: %s",
+                            msg_id,
+                            result.move_to_folder,
+                            exc,
+                        )
+                        record["folder_moved"] = False
+                        _trace(
+                            traces,
+                            msg_id,
+                            "apply_automation_rules",
+                            "move_to_folder",
+                            False,
+                            error=str(exc),
+                            non_fatal=True,
+                        )
+                    else:
+                        record["error"] = str(exc)
+                        errors.append(f"{msg_id}: {exc}")
+                        _trace(
+                            traces,
+                            msg_id,
+                            "apply_automation_rules",
+                            "move_to_folder",
+                            False,
+                            error=str(exc),
+                        )
+                action_records[msg_id] = record
+            elif result.move_to_folder:
                 action_records[msg_id] = record
 
         return {
@@ -199,6 +220,86 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             "current_node": "apply_automation_rules",
         }
 
+    async def persist_rule_matched(state: PipelineState) -> dict:
+        """Persist and log rule-matched messages before slow LLM steps."""
+        account = state["user_email"]
+        conn = _conn(state)
+        messages = _messages(state)
+        rule_results = state.get("rule_results") or {}
+        action_records: dict[str, MessageActionRecord] = dict(
+            state.get("action_records") or {}
+        )
+        traces = dict(state.get("automation_traces") or {})
+        errors = list(state.get("action_errors") or [])
+        by_id = {str(m.get("id")): m for m in messages}
+        rule_classifications: list[MessageClassification] = []
+        actions_taken: list[MessageActionRecord] = []
+        logged_ids: list[str] = []
+
+        if not ctx.email_repository or conn is None:
+            return {"current_node": "persist_rule_matched"}
+
+        for msg_id, rule in rule_results.items():
+            if not rule.get("skip_llm"):
+                continue
+            message = by_id.get(msg_id)
+            record = action_records.get(msg_id)
+            if not message or not record:
+                continue
+            if not state.get("force_reprocess") and await ctx.email_repository.is_message_processed(
+                conn, account, msg_id
+            ):
+                continue
+
+            classification = _rule_classification(msg_id, message, rule)
+            rule_classifications.append(classification)
+            try:
+                await ctx.executor.persist_action(
+                    conn,
+                    account,
+                    msg_id,
+                    record,
+                    classification,
+                    automation_thread_id=state.get("automation_thread_id"),
+                    report=state.get("report"),
+                )
+                actions_taken.append(record)
+                logged_ids.append(msg_id)
+            except Exception as exc:
+                errors.append(f"{msg_id}: persist failed: {exc}")
+
+        if logged_ids:
+            await ctx.email_repository.mark_analyzed(conn, account, logged_ids)
+            log_state = {
+                **state,
+                "classifications": rule_classifications,
+                "actions_taken": actions_taken,
+                "action_errors": errors,
+                "automation_traces": traces,
+            }
+            await persist_message_automation_logs(
+                ctx.email_repository,
+                conn,
+                log_state,
+                total_duration_ms=0,
+                llm_duration_ms=0,
+            )
+            if hasattr(conn, "commit"):
+                await conn.commit()
+            logger.info(
+                "Persisted %d rule-matched message(s) before LLM: %s",
+                len(logged_ids),
+                logged_ids,
+            )
+
+        return {
+            "classifications": list(state.get("classifications") or []) + rule_classifications,
+            "actions_taken": list(state.get("actions_taken") or []) + actions_taken,
+            "automation_logged_ids": list(state.get("automation_logged_ids") or []) + logged_ids,
+            "action_errors": errors,
+            "current_node": "persist_rule_matched",
+        }
+
     async def classify_messages(state: PipelineState) -> dict:
         messages = _messages(state)
         rule_results = state.get("rule_results") or {}
@@ -206,6 +307,7 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             m
             for m in messages
             if not (rule_results.get(str(m.get("id", ""))) or {}).get("skip_llm")
+            and str(m.get("id", "")) not in set(state.get("automation_logged_ids") or [])
         ]
         if not to_classify or not llm_configured(ctx.settings):
             return {
@@ -214,15 +316,36 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             }
 
         traces = dict(state.get("automation_traces") or {})
+        errors = list(state.get("action_errors") or [])
         t0 = perf_counter()
-        classifications = await ClassificationService(ctx.settings).classify_batch(
+        batch_result = await ClassificationService(ctx.settings).classify_batch(
             to_classify,
             classification_rules=state["classification_rules"],
             agent_training=state.get("agent_training"),
         )
         classify_ms = int((perf_counter() - t0) * 1000)
+        for failure in batch_result.errors:
+            msg_id = failure["message_id"]
+            _trace(
+                traces,
+                msg_id,
+                "classify_messages",
+                "classify",
+                False,
+                duration_ms=0,
+                error=failure["error"],
+            )
+            errors.append(
+                {
+                    "message_id": msg_id,
+                    "action": "classify",
+                    "error": failure["error"],
+                }
+            )
         account = state["user_email"]
-        resolved = await ctx.resolver.resolve_routes_async(classifications, account)
+        resolved = await ctx.resolver.resolve_routes_async(
+            batch_result.classifications, account
+        )
         for item in resolved:
             msg_id = item["message_id"]
             if item.get("needs_forwarding"):
@@ -242,18 +365,10 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 category=item.get("category"),
             )
 
-        rule_classifications: list[MessageClassification] = []
-        by_id = {str(m.get("id")): m for m in messages}
-        for msg_id, rule in rule_results.items():
-            if not rule.get("skip_llm"):
-                continue
-            message = by_id.get(msg_id)
-            if message:
-                rule_classifications.append(_rule_classification(msg_id, message, rule))
-
         return {
-            "classifications": rule_classifications + resolved,
+            "classifications": list(state.get("classifications") or []) + resolved,
             "automation_traces": traces,
+            "action_errors": errors,
             "current_node": "classify_messages",
         }
 
@@ -391,10 +506,21 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 continue
 
             if not client.configured():
-                shopify_context[msg_id] = build_shopify_context_payload(
+                ctx_payload = build_shopify_context_payload(
                     classification,
                     reference,
                     error="not_configured",
+                )
+                shopify_context[msg_id] = ctx_payload
+                _trace(
+                    traces,
+                    msg_id,
+                    "fetch_shopify_context",
+                    "skip_api",
+                    False,
+                    outcome=ctx_payload.get("outcome"),
+                    error="not_configured",
+                    order_reference=reference.reference,
                 )
                 continue
 
@@ -644,6 +770,7 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
         "ingest_mailbox": base_nodes["ingest_mailbox"],
         "enrich_messages": base_nodes["enrich_messages"],
         "apply_automation_rules": apply_automation_rules,
+        "persist_rule_matched": persist_rule_matched,
         "classify_messages": classify_messages,
         "apply_routing_actions": apply_routing_actions,
         "fetch_shopify_context": fetch_shopify_context,

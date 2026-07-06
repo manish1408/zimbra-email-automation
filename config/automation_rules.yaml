@@ -3,11 +3,12 @@ rules:
     enabled: true
     priority: 10
     match:
-      from_address: "MAILER-DAEMON@mail-tibolli.vantibolli.com"
+      from_address_regex: "(?i)^mailer-daemon@"
     actions:
       move_to_folder: Undelivered
       skip_llm: true
       mark_analyzed: true
+      set_category: undelivered
 
   - id: gk_hair_noreply_ignore
     enabled: true

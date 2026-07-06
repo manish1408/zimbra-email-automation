@@ -75,7 +75,7 @@
             <th>LLM</th>
             <th>Actions</th>
             <th>Error</th>
-            <th></th>
+            <th class="text-end">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -102,7 +102,14 @@
               <td class="small text-danger text-truncate" style="max-width: 12rem">
                 {{ log.error || '—' }}
               </td>
-              <td class="text-end">
+              <td class="text-end text-nowrap">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-primary me-1"
+                  (click)="openDetail(log, $event)"
+                >
+                  Details
+                </button>
                 <button
                   type="button"
                   class="btn btn-sm btn-outline-secondary"
@@ -122,6 +129,8 @@
       </table>
     </div>
 
+    <p class="small text-muted mt-2 mb-0">Click a row or use Details to view the full run trace.</p>
+
     <div class="d-flex justify-content-between align-items-center mt-3">
       <span class="small text-muted">
         Showing {{ offset + 1 }}–{{ offset + logs.length }} of {{ total }}
@@ -139,117 +148,252 @@
 </div>
 
 @if (detailOpen && selectedLog) {
-  <div class="modal fade show d-block" tabindex="-1" role="dialog" aria-modal="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-      <div class="modal-content">
-        <div class="modal-header">
-          <div>
-            <h5 class="modal-title">Automation details</h5>
-            <p class="small text-muted mb-0">{{ selectedLog.subject || '(no subject)' }}</p>
-          </div>
-          <button type="button" class="btn-close" aria-label="Close" (click)="closeDetail()"></button>
-        </div>
-        <div class="modal-body">
+  <div class="log-detail-backdrop fade show" (click)="closeDetail()"></div>
+
+  <div
+    class="offcanvas offcanvas-end log-detail-offcanvas show visible"
+    tabindex="-1"
+    aria-labelledby="logDetailLabel"
+  >
+    <div class="offcanvas-header border-bottom">
+      <div class="header-copy">
+        <h5 class="offcanvas-title" id="logDetailLabel">Automation log details</h5>
+        <p class="message-subject mb-1">{{ selectedLog.subject || '(no subject)' }}</p>
+        <p class="message-meta small mb-0">
+          <span>{{ selectedLog.from_address || '(unknown sender)' }}</span>
+          <span class="meta-sep">·</span>
+          <span>{{ formatDate(selectedLog.created_at) }}</span>
+        </p>
+      </div>
+      <button type="button" class="btn-close" aria-label="Close" (click)="closeDetail()"></button>
+    </div>
+
+    <div class="detail-toolbar border-bottom px-3 py-2 d-flex flex-wrap gap-2">
+      <button
+        type="button"
+        class="btn btn-outline-secondary btn-sm"
+        (click)="openInInbox(selectedLog)"
+      >
+        Go to inbox
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        [disabled]="retryingId === selectedLog.id"
+        (click)="retry(selectedLog)"
+      >
+        @if (retryingId === selectedLog.id) {
+          Retrying…
+        } @else {
+          Retry automation
+        }
+      </button>
+    </div>
+
+    <div class="offcanvas-body detail-content p-0 d-flex flex-column">
+      <div class="flex-grow-1 overflow-auto px-3 py-3">
+          @if (detailLoading) {
+            <div class="text-center py-4">
+              <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+              <p class="text-muted small mt-2 mb-0">Loading full automation result…</p>
+            </div>
+          }
+
           @if (selectedLog.dry_run) {
             <div class="alert alert-warning py-2 small">Dry run — no Zimbra changes were applied</div>
           }
 
-          <dl class="row small mb-3">
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            <span class="badge text-capitalize" [ngClass]="statusClass(selectedLog.status)">
+              {{ selectedLog.status }}
+            </span>
+            <span class="badge text-bg-light border text-dark">
+              Total {{ formatMs(selectedLog.duration_ms) }}
+            </span>
+            <span class="badge text-bg-light border text-dark">
+              LLM {{ formatMs(selectedLog.llm_duration_ms) }}
+            </span>
+          </div>
+
+          <dl class="row small mb-3 meta-dl">
             <dt class="col-sm-3">Message ID</dt>
             <dd class="col-sm-9"><code>{{ selectedLog.message_id }}</code></dd>
-            <dt class="col-sm-3">Thread</dt>
+            <dt class="col-sm-3">Thread ID</dt>
             <dd class="col-sm-9"><code class="small">{{ selectedLog.thread_id }}</code></dd>
-            <dt class="col-sm-3">Status</dt>
-            <dd class="col-sm-9">
-              <span class="badge text-capitalize" [ngClass]="statusClass(selectedLog.status)">
-                {{ selectedLog.status }}
-              </span>
-            </dd>
-            <dt class="col-sm-3">Timing</dt>
-            <dd class="col-sm-9">
-              Total {{ formatMs(selectedLog.duration_ms) }} · LLM {{ formatMs(selectedLog.llm_duration_ms) }}
-            </dd>
-            <dt class="col-sm-3">From</dt>
-            <dd class="col-sm-9">{{ selectedLog.from_address || '—' }}</dd>
-            <dt class="col-sm-3">Ran at</dt>
-            <dd class="col-sm-9">{{ formatDate(selectedLog.created_at) }}</dd>
+            <dt class="col-sm-3">Log entry</dt>
+            <dd class="col-sm-9">#{{ selectedLog.id }}</dd>
           </dl>
 
           @if (selectedLog.error) {
-            <div class="alert alert-danger py-2 small mb-3">{{ selectedLog.error }}</div>
+            <div class="alert alert-danger py-2 small mb-3">
+              <div class="fw-semibold mb-1">Failure reason</div>
+              {{ selectedLog.error }}
+            </div>
           }
 
-          @if (selectedLog.classification) {
+          @if (detailClassification(); as classification) {
             <div class="card mb-3">
               <div class="card-header py-2 small fw-semibold">Classification</div>
-              <div class="card-body py-2">
-                <pre class="small mb-0">{{ selectedLog.classification | json }}</pre>
+              <div class="card-body py-3">
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                  @if (classification['category']) {
+                    <span class="badge" [ngClass]="categoryClass($any(classification['category']))">
+                      {{ classification['category'] }}
+                    </span>
+                  }
+                  <span
+                    class="badge"
+                    [class.text-bg-danger]="classification['is_spam']"
+                    [class.text-bg-secondary]="!classification['is_spam']"
+                  >
+                    {{ classification['is_spam'] ? 'Spam' : 'Not spam' }}
+                  </span>
+                  <span class="badge text-bg-light border text-dark">
+                    {{ confidencePercent(classification['confidence']) }} confidence
+                  </span>
+                </div>
+                <dl class="row small mb-0">
+                  <dt class="col-sm-4">Forward to</dt>
+                  <dd class="col-sm-8">
+                    {{ detailActions()?.['forwarded_to'] || classification['route_target'] || '—' }}
+                  </dd>
+                  <dt class="col-sm-4">Target folder</dt>
+                  <dd class="col-sm-8">{{ detailActions()?.['folder_path'] || '—' }}</dd>
+                  <dt class="col-sm-4">Source</dt>
+                  <dd class="col-sm-8 text-capitalize">
+                    {{ classification['automation_source'] || '—' }}
+                    @if (classification['rule_id']) {
+                      <span class="text-muted">({{ classification['rule_id'] }})</span>
+                    }
+                  </dd>
+                  @if (classification['reasoning']) {
+                    <dt class="col-sm-4">Reasoning</dt>
+                    <dd class="col-sm-8">{{ classification['reasoning'] }}</dd>
+                  }
+                </dl>
               </div>
             </div>
           }
 
           @if (traceSteps(selectedLog).length) {
             <div class="card mb-3">
-              <div class="card-header py-2 small fw-semibold">Automation trace</div>
-              <div class="card-body py-2">
-                <table class="table table-sm small mb-0">
-                  <thead>
-                    <tr>
-                      <th>Step</th>
-                      <th>Action</th>
-                      <th>Status</th>
-                      <th>Duration</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (step of traceSteps(selectedLog); track $index) {
+              <div class="card-header py-2 small fw-semibold">Pipeline trace</div>
+              <div class="card-body p-0">
+                <div class="table-responsive">
+                  <table class="table table-sm small mb-0 trace-table">
+                    <thead class="table-light">
                       <tr>
-                        <td>{{ step['step'] }}</td>
-                        <td>{{ step['action'] }}</td>
-                        <td>
-                          <span
-                            class="badge"
-                            [class.text-bg-success]="step['success']"
-                            [class.text-bg-danger]="!step['success']"
-                          >
-                            {{ step['success'] ? 'ok' : 'fail' }}
-                          </span>
-                        </td>
-                        <td>{{ formatMs($any(step['duration_ms'])) }}</td>
+                        <th>Step</th>
+                        <th>Action</th>
+                        <th>Status</th>
+                        <th>Duration</th>
+                        <th>Details</th>
                       </tr>
-                    }
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      @for (step of traceSteps(selectedLog); track $index) {
+                        <tr [class.table-danger]="step['success'] === false">
+                          <td>{{ step['step'] }}</td>
+                          <td>{{ step['action'] }}</td>
+                          <td>
+                            <span
+                              class="badge"
+                              [class.text-bg-success]="step['success']"
+                              [class.text-bg-danger]="!step['success']"
+                            >
+                              {{ step['success'] ? 'ok' : 'fail' }}
+                            </span>
+                          </td>
+                          <td class="text-nowrap">{{ formatMs($any(step['duration_ms'])) }}</td>
+                          <td class="text-danger">{{ stepError(step) || '—' }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          } @else {
+            <div class="alert alert-light border small mb-3">No step trace recorded for this run.</div>
+          }
+
+          @if (detailActions(); as actions) {
+            <div class="card mb-3">
+              <div class="card-header py-2 small fw-semibold">Actions taken</div>
+              <div class="card-body py-3">
+                <div class="d-flex flex-wrap gap-2">
+                  @if (actions['folder_moved']) {
+                    <span class="badge text-bg-primary">Moved to folder</span>
+                  }
+                  @if (actions['forwarded_to']) {
+                    <span class="badge text-bg-info text-dark">Forwarded</span>
+                  }
+                  @if (actions['ack_sent']) {
+                    <span class="badge text-bg-success">Ack sent</span>
+                  }
+                  @if (actions['ack_draft_saved']) {
+                    <span class="badge text-bg-success">Ack draft saved</span>
+                  }
+                  @if (actions['draft_saved']) {
+                    <span class="badge text-bg-secondary">Response draft saved</span>
+                  }
+                  @if (
+                    !actions['folder_moved'] &&
+                    !actions['forwarded_to'] &&
+                    !actions['ack_sent'] &&
+                    !actions['ack_draft_saved'] &&
+                    !actions['draft_saved']
+                  ) {
+                    <span class="text-muted small">No Zimbra actions applied</span>
+                  }
+                </div>
               </div>
             </div>
           }
 
-          @if (selectedLog.actions) {
+          @if (detailDraftText()) {
             <div class="card mb-3">
-              <div class="card-header py-2 small fw-semibold">Actions taken</div>
+              <div class="card-header py-2 small fw-semibold">Response draft</div>
               <div class="card-body py-2">
-                <pre class="small mb-0">{{ selectedLog.actions | json }}</pre>
+                <pre class="draft-block small mb-0">{{ detailDraftText() }}</pre>
               </div>
             </div>
           }
-        </div>
-        <div class="modal-footer">
-          <button
-            type="button"
-            class="btn btn-primary btn-sm"
-            [disabled]="retryingId === selectedLog.id"
-            (click)="retry(selectedLog)"
-          >
-            @if (retryingId === selectedLog.id) {
-              Retrying…
-            } @else {
-              Retry automation
-            }
-          </button>
-          <button type="button" class="btn btn-secondary btn-sm" (click)="closeDetail()">Close</button>
+
+          @if (detailAckText()) {
+            <div class="card mb-3">
+              <div class="card-header py-2 small fw-semibold">Acknowledgement draft</div>
+              <div class="card-body py-2">
+                <pre class="draft-block small mb-0">{{ detailAckText() }}</pre>
+              </div>
+            </div>
+          }
+
+          <div class="accordion accordion-flush" id="logRawJson">
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button
+                  class="accordion-button py-2 small"
+                  [class.collapsed]="!showRawJson"
+                  type="button"
+                  (click)="showRawJson = !showRawJson"
+                >
+                  Raw JSON
+                </button>
+              </h2>
+              <div class="accordion-collapse collapse" [class.show]="showRawJson">
+                <div class="accordion-body py-2">
+                  <pre class="small mb-0">{{ selectedLog | json }}</pre>
+                  @if (detailResult) {
+                    <hr class="my-2" />
+                    <p class="small text-muted mb-1">Latest message automation result</p>
+                    <pre class="small mb-0">{{ detailResult | json }}</pre>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-  </div>
-  <div class="modal-backdrop fade show" (click)="closeDetail()"></div>
 }

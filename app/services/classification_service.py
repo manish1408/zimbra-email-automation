@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
@@ -11,6 +15,14 @@ from app.services.agent_training import augment_system_prompt
 from app.services.classification_rules import ClassificationRules
 from app.services.llm import ainvoke_structured, create_chat_llm, llm_configured
 from app.services.routing import RoutingResolver
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ClassifyBatchResult:
+    classifications: list[MessageClassification] = field(default_factory=list)
+    errors: list[dict[str, str]] = field(default_factory=list)
 
 
 class ClassificationItem(BaseModel):
@@ -56,10 +68,48 @@ class ClassificationService:
         messages: list[dict[str, Any]],
         classification_rules: ClassificationRules,
         agent_training: str | None = None,
-    ) -> list[MessageClassification]:
+    ) -> ClassifyBatchResult:
         if not messages:
-            return []
+            return ClassifyBatchResult()
 
+        timeout = self.settings.vastai_timeout_seconds
+        classifications: list[MessageClassification] = []
+        errors: list[dict[str, str]] = []
+
+        for message in messages:
+            msg_id = str(message.get("id", ""))
+            try:
+                items = await asyncio.wait_for(
+                    self._classify_messages_llm(
+                        [message],
+                        classification_rules=classification_rules,
+                        agent_training=agent_training,
+                    ),
+                    timeout=timeout,
+                )
+                classifications.extend(items)
+            except asyncio.TimeoutError:
+                err = f"LLM classify timed out after {timeout:g}s"
+                logger.warning("Message %s: %s", msg_id, err)
+                errors.append({"message_id": msg_id, "error": err})
+            except httpx.TimeoutException:
+                err = f"LLM classify timed out after {timeout:g}s"
+                logger.warning("Message %s: %s", msg_id, err)
+                errors.append({"message_id": msg_id, "error": err})
+            except Exception as exc:
+                err = f"LLM classify failed: {exc}"
+                logger.warning("Message %s: %s", msg_id, err)
+                errors.append({"message_id": msg_id, "error": err})
+
+        return ClassifyBatchResult(classifications=classifications, errors=errors)
+
+    async def _classify_messages_llm(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        classification_rules: ClassificationRules,
+        agent_training: str | None = None,
+    ) -> list[MessageClassification]:
         resolver = RoutingResolver(rules=classification_rules)
         rules_prompt = classification_rules.build_classification_prompt()
         blocks: list[str] = []

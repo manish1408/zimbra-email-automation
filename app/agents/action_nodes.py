@@ -8,6 +8,7 @@ from app.db.email_repository import DbConnection, EmailRepository
 from app.services.action_executor import ActionExecutor
 from app.services.email_sync import EmailSyncService
 from app.services.email_thread import message_needs_full_body
+from app.services.automation_rules import evaluate_message, load_automation_rules
 from app.services.routing import RoutingResolver
 
 
@@ -128,8 +129,13 @@ def make_base_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
         messages = list(state.get("messages") or [])
         enriched: list[dict[str, Any]] = []
         conn = _pipeline_conn(state)
+        automation_rules = load_automation_rules()
 
         for message in messages:
+            rule = evaluate_message(message, automation_rules)
+            if rule.matched and rule.skip_llm:
+                enriched.append(message)
+                continue
             try:
                 enriched.append(
                     await _ensure_readable_content(user_email, message, conn)

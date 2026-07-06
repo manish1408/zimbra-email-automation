@@ -23,6 +23,7 @@ from app.services.zimbra.soap import (
 
 # Zimbra default folder IDs (resolved dynamically when possible)
 INBOX_FOLDER_ID = "2"
+ROOT_FOLDER_ID = "1"
 
 # Some Zimbra/Carbonio builds reject in:anywhere with HTTP 500; is:anywhere works.
 QUERY_ALIASES = {
@@ -89,8 +90,16 @@ class ZimbraMailClient:
                 headers={"Content-Type": "text/xml; charset=utf-8"},
                 timeout=120.0,
             )
-            response.raise_for_status()
-            return response.text
+            text = response.text
+            if response.status_code >= 400:
+                try:
+                    parse_response(text)
+                except ZimbraSoapError:
+                    raise
+                except ValueError:
+                    pass
+                response.raise_for_status()
+            return text
 
     async def search_messages(
         self,
@@ -330,32 +339,53 @@ class ZimbraMailClient:
         *,
         force_create: bool = False,
     ) -> str:
-        """Return folder id, creating the folder under Inbox when it does not exist."""
+        """Return folder id, creating the folder when it does not exist."""
+        folders = await self.list_folders(
+            auth_token=auth_token, account_name=account_name
+        )
+        folder_id = self.find_folder_id(folders, name)
+        if folder_id:
+            return folder_id
         if not force_create:
-            folders = await self.list_folders(
-                auth_token=auth_token, account_name=account_name
+            return folder_id or await self._create_folder_with_fallback(
+                auth_token, account_name, name, parent_id
             )
-            folder_id = self.find_folder_id(folders, name)
-            if folder_id:
-                return folder_id
 
-        try:
-            return await self.create_folder(
-                auth_token=auth_token,
-                account_name=account_name,
-                name=name,
-                parent_id=parent_id,
-            )
-        except (ZimbraSoapError, RuntimeError) as exc:
-            if not _is_folder_exists_error(exc):
-                raise
-            folders = await self.list_folders(
-                auth_token=auth_token, account_name=account_name
-            )
-            folder_id = self.find_folder_id(folders, name)
-            if folder_id:
-                return folder_id
-            raise
+        return await self._create_folder_with_fallback(
+            auth_token, account_name, name, parent_id
+        )
+
+    async def _create_folder_with_fallback(
+        self,
+        auth_token: str,
+        account_name: str,
+        name: str,
+        parent_id: str,
+    ) -> str:
+        last_exc: Exception | None = None
+        for candidate_parent in (parent_id, ROOT_FOLDER_ID):
+            if candidate_parent == parent_id and parent_id == ROOT_FOLDER_ID:
+                continue
+            try:
+                return await self.create_folder(
+                    auth_token=auth_token,
+                    account_name=account_name,
+                    name=name,
+                    parent_id=candidate_parent,
+                )
+            except (ZimbraSoapError, RuntimeError) as exc:
+                last_exc = exc
+                if _is_folder_exists_error(exc):
+                    folders = await self.list_folders(
+                        auth_token=auth_token, account_name=account_name
+                    )
+                    folder_id = self.find_folder_id(folders, name)
+                    if folder_id:
+                        return folder_id
+                continue
+        if last_exc:
+            raise last_exc
+        raise RuntimeError(f"Failed to create folder {name!r}")
 
     @staticmethod
     def folder_matches(folder: ZimbraFolder, name: str) -> bool:
@@ -489,4 +519,18 @@ def _is_folder_exists_error(exc: Exception) -> bool:
     return any(
         token in message
         for token in ("exist", "already", "duplicate", "name not unique")
+    )
+
+
+def _is_folder_lookup_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        token in message
+        for token in (
+            "no such folder",
+            "unknown folder",
+            "invalid folder",
+            "folder not found",
+            "mail_no_such_folder",
+        )
     )

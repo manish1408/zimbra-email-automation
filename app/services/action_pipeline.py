@@ -20,6 +20,7 @@ MODULAR_PIPELINE_STEPS = (
     "ingest_mailbox",
     "enrich_messages",
     "apply_automation_rules",
+    "persist_rule_matched",
     "classify_messages",
     "apply_routing_actions",
     "fetch_shopify_context",
@@ -107,13 +108,18 @@ async def run_action_pipeline(
         )
 
         if email_repository and conn is not None and actions_taken:
-            await persist_message_automation_logs(
-                email_repository,
-                conn,
-                state,
-                total_duration_ms=total_duration_ms,
-                llm_duration_ms=llm_duration_ms,
-            )
+            logged_ids = set(state.get("automation_logged_ids") or [])
+            remaining = [
+                a for a in actions_taken if str(a.get("message_id")) not in logged_ids
+            ]
+            if remaining:
+                await persist_message_automation_logs(
+                    email_repository,
+                    conn,
+                    {**state, "actions_taken": remaining},
+                    total_duration_ms=total_duration_ms,
+                    llm_duration_ms=llm_duration_ms,
+                )
 
         state["pipeline_duration_ms"] = total_duration_ms
         state["pipeline_llm_duration_ms"] = llm_duration_ms

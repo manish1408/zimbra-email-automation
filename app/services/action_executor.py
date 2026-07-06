@@ -9,6 +9,7 @@ from app.db.email_repository import DbConnection, EmailRepository
 from app.services.acknowledgement import build_acknowledgement
 from app.services.email_sync import EmailSyncService
 from app.services.routing import RoutingResolver
+from app.services.zimbra.mail_client import _is_folder_lookup_error
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,8 @@ class ActionExecutor:
         try:
             await self.email_service.move_message(account, msg_id, folder_id)
         except Exception as exc:
+            if not _is_folder_lookup_error(exc):
+                raise
             logger.warning(
                 "Move failed for %s → %s (%s); ensuring folder exists and retrying",
                 msg_id,
