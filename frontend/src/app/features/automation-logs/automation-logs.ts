@@ -44,6 +44,7 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
   loading = false;
   loadingUsers = false;
   error = '';
+  retrySuccess = '';
   retryingId: number | null = null;
 
   ngOnInit(): void {
@@ -101,10 +102,12 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
     this.logs = [];
   }
 
-  loadLogs(): void {
+  loadLogs(silent = false): void {
     if (!this.selectedEmail) return;
-    this.loading = true;
-    this.error = '';
+    if (!silent) {
+      this.loading = true;
+      this.error = '';
+    }
     this.automationService
       .listLogs(this.selectedEmail, {
         limit: this.limit,
@@ -182,21 +185,52 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
 
   retry(log: AutomationLogEntry, event?: Event): void {
     event?.stopPropagation();
-    if (!this.selectedEmail || this.retryingId != null) return;
+    if (!this.selectedEmail || this.retryingId === log.id) return;
     this.retryingId = log.id;
+    this.error = '';
+    this.retrySuccess = '';
     this.automationService.run(this.selectedEmail, log.message_id, true).subscribe({
-      next: () => {
+      next: (result) => {
         this.retryingId = null;
-        this.loadLogs();
-        if (this.detailOpen && this.selectedLog?.id === log.id) {
-          this.openDetail(log);
-        }
+        this.retrySuccess = `Re-run completed (${result.status}).`;
+        this.refreshAfterRetry(log.message_id, result);
       },
       error: (err) => {
         this.error = err?.error?.detail ?? 'Retry failed';
         this.retryingId = null;
       },
     });
+  }
+
+  private refreshAfterRetry(messageId: string, result: MessageAutomationResult): void {
+    if (!this.selectedEmail) return;
+    this.automationService
+      .listLogs(this.selectedEmail, {
+        limit: this.limit,
+        offset: this.offset,
+        status: this.statusFilter || undefined,
+      })
+      .subscribe({
+        next: (res) => {
+          this.logs = res.logs;
+          this.total = res.total;
+          this.hasMore = res.has_more;
+          if (!this.detailOpen || this.selectedLog?.message_id !== messageId) return;
+          const latest = res.logs.find((entry) => entry.message_id === messageId);
+          if (latest) {
+            this.selectedLog = latest;
+          }
+          this.detailResult = result;
+          this.detailLoading = false;
+        },
+        error: () => {
+          this.loadLogs(true);
+          if (this.detailOpen && this.selectedLog?.message_id === messageId) {
+            this.detailResult = result;
+            this.detailLoading = false;
+          }
+        },
+      });
   }
 
   formatDate(value?: string | null): string {
@@ -255,9 +289,13 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
   }
 
   traceSteps(log: AutomationLogEntry | null): Array<Record<string, unknown>> {
-    if (!log) return [];
-    const steps = log.automation_trace?.['steps'];
+    const trace = this.detailResult?.automation_trace ?? log?.automation_trace;
+    const steps = trace?.['steps'];
     return Array.isArray(steps) ? steps : [];
+  }
+
+  detailStatus(): string {
+    return this.detailResult?.status ?? this.selectedLog?.status ?? '';
   }
 
   detailClassification(): Record<string, unknown> | null {

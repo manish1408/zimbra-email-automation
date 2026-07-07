@@ -19,7 +19,13 @@ class ZimbraAdminClient:
         self.settings = settings
         self._admin_token: str | None = None
 
-    async def _post(self, body_xml: str, auth_token: str | None = None) -> str:
+    async def _post(
+        self,
+        body_xml: str,
+        auth_token: str | None = None,
+        *,
+        _retried: bool = False,
+    ) -> str:
         envelope = build_envelope(body_xml, auth_token=auth_token)
         async with httpx.AsyncClient(verify=self.settings.zimbra_verify_ssl) as client:
             response = await client.post(
@@ -28,6 +34,14 @@ class ZimbraAdminClient:
                 headers={"Content-Type": "text/xml; charset=utf-8"},
                 timeout=60.0,
             )
+            if (
+                not _retried
+                and auth_token is not None
+                and response.status_code in {401, 500}
+            ):
+                self._admin_token = None
+                fresh = await self.authenticate()
+                return await self._post(body_xml, auth_token=fresh, _retried=True)
             response.raise_for_status()
             return response.text
 

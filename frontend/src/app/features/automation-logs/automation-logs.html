@@ -5,6 +5,14 @@
   @if (error) {
     <div class="alert alert-danger py-2 small">{{ error }}</div>
   }
+  @if (retrySuccess) {
+    <div class="alert alert-success py-2 small">{{ retrySuccess }}</div>
+  }
+  @if (retryingId != null) {
+    <div class="alert alert-info py-2 small">
+      Running automation… this can take 1–2 minutes. Please keep this page open.
+    </div>
+  }
 
   <div class="card shadow-sm mb-4">
     <div class="card-body">
@@ -204,8 +212,8 @@
           }
 
           <div class="d-flex flex-wrap gap-2 mb-3">
-            <span class="badge text-capitalize" [ngClass]="statusClass(selectedLog.status)">
-              {{ selectedLog.status }}
+            <span class="badge text-capitalize" [ngClass]="statusClass(detailStatus())">
+              {{ detailStatus() }}
             </span>
             <span class="badge text-bg-light border text-dark">
               Total {{ formatMs(selectedLog.duration_ms) }}
