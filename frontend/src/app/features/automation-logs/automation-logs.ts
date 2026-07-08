@@ -283,7 +283,6 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
     const parts: string[] = [];
     if (actions['folder_moved']) parts.push('moved');
     if (actions['forwarded_to']) parts.push('forwarded');
-    if (actions['ack_sent']) parts.push('ack');
     if (actions['draft_saved']) parts.push('draft');
     return parts.length ? parts.join(', ') : actions['folder_path'] ? 'folder set' : '—';
   }
@@ -308,10 +307,6 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
 
   detailDraftText(): string | null {
     return this.detailResult?.draft_reply_text ?? null;
-  }
-
-  detailAckText(): string | null {
-    return this.detailResult?.ack_body_text ?? null;
   }
 
   stepError(step: Record<string, unknown>): string | null {

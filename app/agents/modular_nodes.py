@@ -147,11 +147,8 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 "folder_path": result.move_to_folder,
                 "folder_moved": False,
                 "forwarded_to": None,
-                "ack_sent": False,
-                "ack_draft_saved": False,
                 "draft_saved": False,
                 "draft_reply_text": None,
-                "ack_body_text": None,
                 "error": None,
                 "automation_trace": traces.get(msg_id),
             }
@@ -402,11 +399,8 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 "folder_path": None,
                 "folder_moved": False,
                 "forwarded_to": None,
-                "ack_sent": False,
-                "ack_draft_saved": False,
                 "draft_saved": False,
                 "draft_reply_text": None,
-                "ack_body_text": None,
                 "error": None,
             }
 
@@ -428,15 +422,6 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                     )
                     record["forwarded_to"] = forwarded
                     _trace(traces, msg_id, "apply_routing_actions", "forward", True, to=forwarded)
-
-                ack_body, ack_sent, ack_draft_saved = await ctx.executor.apply_ack(
-                    account, message, classification
-                )
-                record["ack_body_text"] = ack_body
-                record["ack_sent"] = ack_sent
-                record["ack_draft_saved"] = ack_draft_saved
-                if ack_body:
-                    _trace(traces, msg_id, "apply_routing_actions", "ack", True)
             except Exception as exc:
                 record["error"] = str(exc)
                 errors.append(f"{msg_id}: {exc}")
@@ -652,11 +637,8 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 "folder_path": None,
                 "folder_moved": False,
                 "forwarded_to": None,
-                "ack_sent": False,
-                "ack_draft_saved": False,
                 "draft_saved": False,
                 "draft_reply_text": None,
-                "ack_body_text": None,
                 "error": None,
             }
 
@@ -728,11 +710,8 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                     "folder_path": None,
                     "folder_moved": False,
                     "forwarded_to": None,
-                    "ack_sent": False,
-                    "ack_draft_saved": False,
                     "draft_saved": False,
                     "draft_reply_text": None,
-                    "ack_body_text": None,
                     "error": None,
                     "automation_trace": (state.get("automation_traces") or {}).get(msg_id),
                 }

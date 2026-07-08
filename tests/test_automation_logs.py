@@ -44,7 +44,6 @@ def test_result_from_db_without_action_row():
             "classification": {"category": "support"},
             "actions": None,
             "draft_reply_text": None,
-            "ack_body_text": None,
             "error": "pipeline error",
             "created_at": "2026-01-01T00:00:00+00:00",
         }
@@ -85,8 +84,6 @@ async def test_persist_message_automation_logs_inserts_rows():
                 "folder_moved": True,
                 "folder_path": "Support",
                 "forwarded_to": None,
-                "ack_sent": False,
-                "ack_draft_saved": False,
                 "draft_saved": False,
                 "automation_trace": {"steps": [{"step": "classify_messages", "action": "classify", "success": True}]},
             }

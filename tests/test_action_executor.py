@@ -20,6 +20,7 @@ async def test_apply_response_draft_calls_save_draft():
         automation_dry_run=False,
     )
     email_service = AsyncMock()
+    email_service.get_raw_message.return_value = None
     repository = MagicMock()
     resolver = MagicMock()
     executor = ActionExecutor(settings, email_service, repository, resolver)

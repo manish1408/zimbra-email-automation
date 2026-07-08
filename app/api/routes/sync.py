@@ -91,7 +91,6 @@ async def sync_user_mailbox(
             moved=stats.get("moved"),
             spam=stats.get("spam"),
             forwarded=stats.get("forwarded"),
-            acked=stats.get("acked"),
             drafts=stats.get("drafts"),
             dry_run=bool(stats.get("dry_run", settings.automation_dry_run)),
             move_to_folders=bool(

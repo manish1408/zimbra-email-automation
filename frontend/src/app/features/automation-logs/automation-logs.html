@@ -336,20 +336,12 @@
                   @if (actions['forwarded_to']) {
                     <span class="badge text-bg-info text-dark">Forwarded</span>
                   }
-                  @if (actions['ack_sent']) {
-                    <span class="badge text-bg-success">Ack sent</span>
-                  }
-                  @if (actions['ack_draft_saved']) {
-                    <span class="badge text-bg-success">Ack draft saved</span>
-                  }
                   @if (actions['draft_saved']) {
                     <span class="badge text-bg-secondary">Response draft saved</span>
                   }
                   @if (
                     !actions['folder_moved'] &&
                     !actions['forwarded_to'] &&
-                    !actions['ack_sent'] &&
-                    !actions['ack_draft_saved'] &&
                     !actions['draft_saved']
                   ) {
                     <span class="text-muted small">No Zimbra actions applied</span>
@@ -364,15 +356,6 @@
               <div class="card-header py-2 small fw-semibold">Response draft</div>
               <div class="card-body py-2">
                 <pre class="draft-block small mb-0">{{ detailDraftText() }}</pre>
-              </div>
-            </div>
-          }
-
-          @if (detailAckText()) {
-            <div class="card mb-3">
-              <div class="card-header py-2 small fw-semibold">Acknowledgement draft</div>
-              <div class="card-body py-2">
-                <pre class="draft-block small mb-0">{{ detailAckText() }}</pre>
               </div>
             </div>
           }

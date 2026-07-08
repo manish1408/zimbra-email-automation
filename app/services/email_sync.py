@@ -109,6 +109,15 @@ class EmailSyncService:
         detail.body = message.body
         return detail
 
+    async def get_raw_message(self, user_email: str, message_id: str):
+        """Fetch the full Zimbra message (incl. cc recipients) for reply-all drafts."""
+        token = await self.admin.delegate_auth(user_email)
+        return await self.mail.get_message(
+            auth_token=token,
+            account_name=user_email,
+            message_id=message_id,
+        )
+
     async def _delegate_token(self, user_email: str) -> str:
         return await self.admin.delegate_auth(user_email)
 
@@ -158,10 +167,23 @@ class EmailSyncService:
         subject: str,
         body_text: str,
         to_address: str | None = None,
+        *,
+        cc_addresses: list[str] | None = None,
+        from_address: str | None = None,
+        origid: str | None = None,
+        reply_type: str | None = None,
     ) -> str | None:
         token = await self._delegate_token(user_email)
         return await self.mail.save_draft(
-            token, user_email, subject, body_text, to_address=to_address
+            token,
+            user_email,
+            subject,
+            body_text,
+            to_address=to_address,
+            cc_addresses=cc_addresses,
+            from_address=from_address,
+            origid=origid,
+            reply_type=reply_type,
         )
 
     async def autocomplete_person(self, user_email: str, name: str) -> list[str]:

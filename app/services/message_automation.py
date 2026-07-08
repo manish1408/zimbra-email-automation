@@ -25,8 +25,6 @@ def _actions_from_record(record: dict[str, Any] | None) -> dict[str, Any] | None
         "folder_path": record.get("folder_path"),
         "folder_moved": bool(record.get("folder_moved")),
         "forwarded_to": record.get("forwarded_to"),
-        "ack_sent": bool(record.get("ack_sent")),
-        "ack_draft_saved": bool(record.get("ack_draft_saved")),
         "draft_saved": bool(record.get("draft_saved")),
     }
 
@@ -38,8 +36,6 @@ def _actions_from_action_taken(action: dict[str, Any] | None) -> dict[str, Any] 
         "folder_path": action.get("folder_path"),
         "folder_moved": bool(action.get("folder_moved")),
         "forwarded_to": action.get("forwarded_to"),
-        "ack_sent": bool(action.get("ack_sent")),
-        "ack_draft_saved": bool(action.get("ack_draft_saved")),
         "draft_saved": bool(action.get("draft_saved")),
     }
 
@@ -53,7 +49,6 @@ def _run_summary(run: dict[str, Any]) -> MessageAutomationRunSummary:
         classification=run.get("classification") or None,
         actions=run.get("actions") or None,
         draft_reply_text=run.get("draft_reply_text"),
-        ack_body_text=run.get("ack_body_text"),
         error=run.get("error"),
         duration_ms=run.get("duration_ms"),
         llm_duration_ms=run.get("llm_duration_ms"),
@@ -81,7 +76,6 @@ def _result_from_db(
     classification = None
     actions = None
     draft_reply_text = None
-    ack_body_text = None
     processed_at = None
     automation_trace = None
     latest_run = runs[0] if runs else None
@@ -92,14 +86,9 @@ def _result_from_db(
             "folder_path": action.get("folder_path"),
             "folder_moved": bool(action.get("folder_moved")),
             "forwarded_to": action.get("forwarded_to"),
-            "ack_sent": bool(action.get("ack_sent_at")),
-            "ack_draft_saved": bool(
-                action.get("ack_body_text") and not action.get("ack_sent_at")
-            ),
             "draft_saved": bool(action.get("draft_saved")),
         }
         draft_reply_text = action.get("draft_reply_text")
-        ack_body_text = action.get("ack_body_text")
         processed_at = action.get("processed_at")
         automation_trace = action.get("automation_trace")
         thread_id = thread_id or action.get("automation_thread_id")
@@ -115,8 +104,6 @@ def _result_from_db(
             actions = latest_run.get("actions")
         if not draft_reply_text:
             draft_reply_text = latest_run.get("draft_reply_text")
-        if not ack_body_text:
-            ack_body_text = latest_run.get("ack_body_text")
         if not status:
             status = latest_run.get("status") or "completed"
         if not thread_id:
@@ -136,7 +123,6 @@ def _result_from_db(
         classification=classification,
         actions=actions,
         draft_reply_text=draft_reply_text,
-        ack_body_text=ack_body_text,
         report=report or {},
         error=error,
         processed_at=processed_at,
@@ -183,7 +169,6 @@ class MessageAutomationService:
                             classification=existing.classification,
                             actions=existing.actions,
                             draft_reply_text=existing.draft_reply_text,
-                            ack_body_text=existing.ack_body_text,
                             report=existing.report,
                             error="Message already processed; use force=true to re-run",
                             processed_at=existing.processed_at,
@@ -247,7 +232,6 @@ class MessageAutomationService:
 
             dry_run = bool(report.get("dry_run", self.settings.automation_dry_run))
             draft_reply_text = action.get("draft_reply_text") if action else None
-            ack_body_text = action.get("ack_body_text") if action else None
 
             return MessageAutomationResult(
                 account=account,
@@ -258,7 +242,6 @@ class MessageAutomationService:
                 classification=dict(classification) if classification else None,
                 actions=_actions_from_action_taken(action),
                 draft_reply_text=draft_reply_text,
-                ack_body_text=ack_body_text,
                 report=report,
                 error=error,
                 processed_at=None,
@@ -351,7 +334,6 @@ class MessageAutomationService:
         classification: dict[str, Any] | None = None,
         actions: dict[str, Any] | None = None,
         draft_reply_text: str | None = None,
-        ack_body_text: str | None = None,
         report: dict[str, Any] | None = None,
         error: str | None = None,
         conn: Any | None = None,
@@ -370,7 +352,6 @@ class MessageAutomationService:
                 classification=classification,
                 actions=actions,
                 draft_reply_text=draft_reply_text,
-                ack_body_text=ack_body_text,
                 report=report,
                 error=error,
             )

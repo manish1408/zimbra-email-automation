@@ -50,6 +50,7 @@ class ZimbraMessage:
     date: str | None
     fragment: str | None
     account: str
+    cc_addresses: list[str] = field(default_factory=list)
     folder: str | None = None
     size: int | None = None
     is_read: bool | None = None
@@ -230,6 +231,7 @@ class ZimbraMailClient:
 
         from_address = None
         to_addresses: list[str] = []
+        cc_addresses: list[str] = []
         for email in find_all(node, "e"):
             address = email.attrib.get("a")
             if not address:
@@ -239,12 +241,15 @@ class ZimbraMailClient:
                 from_address = address
             elif email_type == "t":
                 to_addresses.append(address)
+            elif email_type == "c":
+                cc_addresses.append(address)
 
         return ZimbraMessage(
             id=node.attrib.get("id", ""),
             subject=subject,
             from_address=from_address,
             to_addresses=to_addresses,
+            cc_addresses=cc_addresses,
             date=date,
             fragment=fragment,
             account=account_name,
@@ -469,14 +474,30 @@ class ZimbraMailClient:
         subject: str,
         body_text: str,
         to_address: str | None = None,
+        *,
+        cc_addresses: list[str] | None = None,
+        from_address: str | None = None,
+        origid: str | None = None,
+        reply_type: str | None = None,
     ) -> str | None:
-        to_xml = ""
+        recipients: list[str] = []
+        if from_address:
+            recipients.append(f'<e t="f" a="{escape_xml(from_address)}"/>')
         if to_address:
-            to_xml = f'<e t="t" a="{escape_xml(to_address)}"/>'
+            recipients.append(f'<e t="t" a="{escape_xml(to_address)}"/>')
+        for cc in cc_addresses or []:
+            recipients.append(f'<e t="c" a="{escape_xml(cc)}"/>')
+
+        m_attrs = ""
+        if origid:
+            m_attrs += f' origid="{escape_xml(origid)}"'
+        if reply_type:
+            m_attrs += f' rt="{escape_xml(reply_type)}"'
+
         body = (
             f'<SaveDraftRequest xmlns="{ZIMBRA_MAIL_NS}">'
-            f"<m>"
-            f"{to_xml}"
+            f"<m{m_attrs}>"
+            f"{''.join(recipients)}"
             f"<su>{escape_xml(subject)}</su>"
             f'<mp ct="text/plain"><content>{escape_xml(body_text)}</content></mp>'
             f"</m>"

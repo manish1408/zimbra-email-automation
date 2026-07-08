@@ -49,8 +49,6 @@ class Settings(BaseSettings):
     # Automation actions
     automation_dry_run: bool = True
     automation_move_to_folders: bool = True
-    auto_send_ack: bool = False
-    save_ack_as_draft: bool = True
 
     # Shopify Bot API (order / invoice lookups)
     shopify_bot_base_url: str = "https://bot.gkhair.com"

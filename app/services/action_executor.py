@@ -6,7 +6,6 @@ from typing import Any
 from app.agents.state import MessageActionRecord, MessageClassification
 from app.config import Settings
 from app.db.email_repository import DbConnection, EmailRepository
-from app.services.acknowledgement import build_acknowledgement
 from app.services.email_sync import EmailSyncService
 from app.services.routing import RoutingResolver
 from app.services.zimbra.mail_client import _is_folder_lookup_error
@@ -73,34 +72,6 @@ class ActionExecutor:
         logger.info("Forwarded message %s to %s", msg_id, route_target)
         return route_target
 
-    async def apply_ack(
-        self,
-        account: str,
-        message: dict[str, Any],
-        classification: MessageClassification,
-    ) -> tuple[str | None, bool, bool]:
-        if not self.resolver.should_send_ack(classification):
-            return None, False, False
-        ack_body = build_acknowledgement(message, classification, self.resolver.rules)
-        dry_run = self.settings.automation_dry_run
-        ack_sent = False
-        ack_draft_saved = False
-        if dry_run:
-            if self.settings.save_ack_as_draft:
-                ack_draft_saved = True
-            elif self.settings.auto_send_ack:
-                ack_sent = True
-            return ack_body, ack_sent, ack_draft_saved
-
-        msg_id = str(message.get("id", ""))
-        if self.settings.save_ack_as_draft:
-            await self._save_draft(account, message, ack_body, label="acknowledgement")
-            ack_draft_saved = True
-        elif self.settings.auto_send_ack:
-            await self.email_service.send_reply(account, msg_id, ack_body)
-            ack_sent = True
-        return ack_body, ack_sent, ack_draft_saved
-
     async def apply_response_draft(
         self,
         account: str,
@@ -114,9 +85,7 @@ class ActionExecutor:
                 message.get("id"),
             )
             return True
-        await self._save_draft(
-            account, message, draft_reply_text, label="response"
-        )
+        await self._save_draft(account, message, draft_reply_text)
         return True
 
     async def persist_action(
@@ -138,11 +107,9 @@ class ActionExecutor:
             is_spam=bool(record.get("is_spam")),
             folder_path=record.get("folder_path"),
             forwarded_to=record.get("forwarded_to"),
-            ack_sent_at=_utc_now() if record.get("ack_sent") else None,
             draft_saved=bool(record.get("draft_saved")),
             classification=dict(classification) if classification else None,
             draft_reply_text=record.get("draft_reply_text"),
-            ack_body_text=record.get("ack_body_text"),
             automation_thread_id=automation_thread_id,
             report_json=report,
             error=record.get("error"),
@@ -154,21 +121,58 @@ class ActionExecutor:
         account: str,
         message: dict[str, Any],
         body_text: str,
-        *,
-        label: str,
     ) -> None:
-        subject = message.get("subject") or "Support request"
-        to_addr = message.get("from") or message.get("from_address")
-        draft_subject = f"Re: {subject}"
-        if label == "acknowledgement":
-            draft_subject = f"Re: {subject} (acknowledgement)"
+        msg_id = str(message.get("id") or "")
+
+        original = None
+        if msg_id:
+            try:
+                original = await self.email_service.get_raw_message(account, msg_id)
+            except Exception as exc:
+                logger.warning(
+                    "Could not fetch original message %s for reply-all draft: %s",
+                    msg_id,
+                    exc,
+                )
+
+        subject = (
+            (original.subject if original else None)
+            or message.get("subject")
+            or "Support request"
+        )
+        draft_subject = _ensure_reply_subject(subject)
+
+        to_addr = (
+            (original.from_address if original else None)
+            or message.get("from")
+            or message.get("from_address")
+        )
+
+        if original:
+            cc_source = [*original.to_addresses, *original.cc_addresses]
+        else:
+            cc_source = list(message.get("to") or message.get("to_addresses") or [])
+        exclude = [account, to_addr] if to_addr else [account]
+        cc_addresses = _dedupe_addresses(cc_source, exclude=exclude)
+
+        reply_body = _build_reply_body(body_text, original)
+
         await self.email_service.save_draft(
             account,
             subject=draft_subject,
-            body_text=body_text,
+            body_text=reply_body,
             to_address=to_addr,
+            cc_addresses=cc_addresses,
+            from_address=account,
+            origid=msg_id or None,
+            reply_type="r",
         )
-        logger.info("Saved %s draft for message %s", label, message.get("id"))
+        logger.info(
+            "Saved reply-all draft for message %s (to=%s, cc=%d)",
+            msg_id,
+            to_addr,
+            len(cc_addresses),
+        )
 
     async def _move_to_folder(
         self,
@@ -215,7 +219,50 @@ class ActionExecutor:
         return True
 
 
-def _utc_now() -> str:
-    from datetime import UTC, datetime
+def _ensure_reply_subject(subject: str) -> str:
+    text = (subject or "").strip()
+    if not text:
+        return "Re:"
+    if text.lower().startswith("re:"):
+        return text
+    return f"Re: {text}"
 
-    return datetime.now(UTC).isoformat()
+
+def _dedupe_addresses(
+    addresses: list[str], *, exclude: list[str | None]
+) -> list[str]:
+    exclude_lower = {a.lower() for a in exclude if a}
+    seen: set[str] = set()
+    result: list[str] = []
+    for addr in addresses:
+        if not addr:
+            continue
+        key = addr.lower()
+        if key in exclude_lower or key in seen:
+            continue
+        seen.add(key)
+        result.append(addr)
+    return result
+
+
+def _build_reply_body(reply_text: str, original: Any | None) -> str:
+    """Prepend the reply and quote the original message so the thread stays visible."""
+    if original is None:
+        return reply_text
+    header_lines = ["", "----- Original Message -----"]
+    if getattr(original, "from_address", None):
+        header_lines.append(f"From: {original.from_address}")
+    if getattr(original, "date", None):
+        header_lines.append(f"Sent: {original.date}")
+    if getattr(original, "to_addresses", None):
+        header_lines.append(f"To: {', '.join(original.to_addresses)}")
+    if getattr(original, "cc_addresses", None):
+        header_lines.append(f"Cc: {', '.join(original.cc_addresses)}")
+    if getattr(original, "subject", None):
+        header_lines.append(f"Subject: {original.subject}")
+
+    quoted = "\n".join(header_lines)
+    original_body = (getattr(original, "body", None) or "").strip()
+    if original_body:
+        quoted += "\n\n" + original_body
+    return f"{reply_text.rstrip()}\n{quoted}\n"

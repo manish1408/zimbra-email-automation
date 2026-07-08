@@ -162,7 +162,6 @@ export class AgentComponent implements OnInit {
         classification_hints: '',
         folder: '',
         forward_to: null,
-        send_ack: true,
         needs_live_agent: false,
         is_spam: false,
         route_by_person: false,

@@ -87,7 +87,6 @@ export interface AgentTraining {
 export interface ClassificationConfig {
   spam_folder: string;
   default_forward: string | null;
-  ack_template: string;
   classification_instructions: string;
 }
 
@@ -97,7 +96,6 @@ export interface ClassificationCategory {
   classification_hints: string;
   folder: string;
   forward_to: string | null;
-  send_ack: boolean;
   needs_live_agent: boolean;
   is_spam: boolean;
   route_by_person: boolean;
@@ -127,11 +125,9 @@ export interface MessageMetadata {
   is_spam: boolean;
   folder_path?: string | null;
   forwarded_to?: string | null;
-  ack_sent_at?: string | null;
   draft_saved: boolean;
   classification?: Record<string, unknown> | null;
   draft_reply_text?: string | null;
-  ack_body_text?: string | null;
   report?: Record<string, unknown> | null;
   error?: string | null;
   processed_at?: string | null;
@@ -151,7 +147,6 @@ export interface MessageAutomationRunSummary {
   classification?: Record<string, unknown> | null;
   actions?: Record<string, unknown> | null;
   draft_reply_text?: string | null;
-  ack_body_text?: string | null;
   error?: string | null;
   duration_ms?: number | null;
   llm_duration_ms?: number | null;
@@ -194,7 +189,6 @@ export interface MessageAutomationResult {
   classification?: Record<string, unknown> | null;
   actions?: Record<string, unknown> | null;
   draft_reply_text?: string | null;
-  ack_body_text?: string | null;
   report: Record<string, unknown>;
   error?: string | null;
   processed_at?: string | null;

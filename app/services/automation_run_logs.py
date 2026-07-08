@@ -10,8 +10,6 @@ def _actions_from_record(record: dict[str, Any]) -> dict[str, Any]:
         "folder_path": record.get("folder_path"),
         "folder_moved": bool(record.get("folder_moved")),
         "forwarded_to": record.get("forwarded_to"),
-        "ack_sent": bool(record.get("ack_sent")),
-        "ack_draft_saved": bool(record.get("ack_draft_saved")),
         "draft_saved": bool(record.get("draft_saved")),
     }
 
@@ -108,7 +106,6 @@ async def persist_message_automation_logs(
             classification=_classification_for(msg_id, state),
             actions=_actions_from_record(record),
             draft_reply_text=record.get("draft_reply_text"),
-            ack_body_text=record.get("ack_body_text"),
             report=report,
             error=error,
             duration_ms=per_msg_duration,

@@ -62,12 +62,6 @@ class RoutingResolver:
         fallback = self.rules.fallback_category()
         return fallback.folder if fallback else self.rules.config.spam_folder
 
-    def should_send_ack(self, classification: MessageClassification) -> bool:
-        if classification.get("is_spam"):
-            return False
-        rule = self.resolve_category_rule(classification["category"])
-        return rule.send_ack if rule else True
-
     def should_draft_reply(self, classification: MessageClassification) -> bool:
         if classification.get("is_spam"):
             return False

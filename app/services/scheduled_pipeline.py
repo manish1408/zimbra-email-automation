@@ -284,7 +284,6 @@ class ScheduledPipeline:
             "spam": report.get("spam"),
             "moved": report.get("moved"),
             "forwarded": report.get("forwarded"),
-            "acked": report.get("acked"),
             "drafts": report.get("drafts"),
             "errors": report.get("errors"),
             "dry_run": report.get("dry_run"),

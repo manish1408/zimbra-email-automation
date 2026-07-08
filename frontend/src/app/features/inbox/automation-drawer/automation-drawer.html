@@ -169,12 +169,6 @@
               } @else if (result.actions?.['folder_path'] && !result.dry_run) {
                 <span class="badge text-bg-light border text-dark">Already in folder</span>
               }
-              @if (result.actions?.['ack_sent']) {
-                <span class="badge text-bg-success">Ack sent</span>
-              }
-              @if (result.actions?.['ack_draft_saved']) {
-                <span class="badge text-bg-success">Ack draft saved</span>
-              }
               @if (result.actions?.['draft_saved']) {
                 <span class="badge text-bg-secondary">Response draft saved</span>
               }
@@ -191,15 +185,6 @@
             <div class="card-header py-2">Response draft</div>
             <div class="card-body py-3">
               <pre class="draft-block mb-0">{{ draftReplyText() }}</pre>
-            </div>
-          </div>
-        }
-
-        @if (ackBodyText()) {
-          <div class="result-card card mb-3">
-            <div class="card-header py-2">Acknowledgement draft</div>
-            <div class="card-body py-3">
-              <pre class="draft-block mb-0">{{ ackBodyText() }}</pre>
             </div>
           </div>
         }
@@ -260,7 +245,7 @@
             </div>
             <p class="mb-1 fw-semibold">No automation yet</p>
             <p class="text-muted small mb-0">
-              Run automation to classify this email, route it, and generate acknowledgement or draft replies.
+              Run automation to classify this email, route it, and generate draft replies.
             </p>
           </div>
         }

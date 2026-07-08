@@ -100,7 +100,6 @@ class MailboxAutomationRunResponse(BaseModel):
     moved: int | None = None
     spam: int | None = None
     forwarded: int | None = None
-    acked: int | None = None
     drafts: int | None = None
     dry_run: bool = False
     move_to_folders: bool = True
@@ -183,11 +182,9 @@ class MessageMetadata(BaseModel):
     is_spam: bool = False
     folder_path: str | None = None
     forwarded_to: str | None = None
-    ack_sent_at: str | None = None
     draft_saved: bool = False
     classification: dict | None = None
     draft_reply_text: str | None = None
-    ack_body_text: str | None = None
     report: dict | None = None
     automation_trace: dict | None = None
     error: str | None = None
@@ -207,7 +204,6 @@ class MessageAutomationRunSummary(BaseModel):
     classification: dict | None = None
     actions: dict | None = None
     draft_reply_text: str | None = None
-    ack_body_text: str | None = None
     error: str | None = None
     duration_ms: int | None = None
     llm_duration_ms: int | None = None
@@ -250,7 +246,6 @@ class MessageAutomationResult(BaseModel):
     classification: dict | None = None
     actions: dict | None = None
     draft_reply_text: str | None = None
-    ack_body_text: str | None = None
     report: dict = Field(default_factory=dict)
     error: str | None = None
     processed_at: str | None = None

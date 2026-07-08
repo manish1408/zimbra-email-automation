@@ -125,14 +125,6 @@ export class AutomationDrawerComponent implements OnChanges, OnDestroy {
     return runWithDraft?.draft_reply_text ?? null;
   }
 
-  ackBodyText(): string | null {
-    if (this.result?.ack_body_text) {
-      return this.result.ack_body_text;
-    }
-    const runWithAck = this.result?.runs?.find((run) => run.ack_body_text);
-    return runWithAck?.ack_body_text ?? null;
-  }
-
   categoryClass(category?: string | null): string {
     const map: Record<string, string> = {
       spam: 'bg-danger',
