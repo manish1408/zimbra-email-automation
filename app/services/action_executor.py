@@ -157,7 +157,7 @@ class ActionExecutor:
 
         reply_body = _build_reply_body(body_text, original)
 
-        await self.email_service.save_draft(
+        draft_id = await self.email_service.save_draft(
             account,
             subject=draft_subject,
             body_text=reply_body,
@@ -165,8 +165,25 @@ class ActionExecutor:
             cc_addresses=cc_addresses,
             from_address=account,
             origid=msg_id or None,
-            reply_type="r",
+            # Use reply-all thread context so opening the email shows this draft inline.
+            reply_type="w",
         )
+        if draft_id:
+            folder_name = self.settings.automation_auto_replies_folder
+            folder_id = await self.email_service.ensure_folder(account, folder_name)
+            await self.email_service.move_message(account, draft_id, folder_id)
+            logger.info(
+                "Moved draft %s for message %s to folder %s",
+                draft_id,
+                msg_id,
+                folder_name,
+            )
+        else:
+            logger.warning(
+                "Draft for message %s saved without id; cannot move to %s",
+                msg_id,
+                self.settings.automation_auto_replies_folder,
+            )
         logger.info(
             "Saved reply-all draft for message %s (to=%s, cc=%d)",
             msg_id,

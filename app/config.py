@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     # Automation actions
     automation_dry_run: bool = True
     automation_move_to_folders: bool = True
+    automation_auto_replies_folder: str = "Auto Replies"
 
     # Shopify Bot API (order / invoice lookups)
     shopify_bot_base_url: str = "https://bot.gkhair.com"
