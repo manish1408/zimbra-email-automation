@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     agent_inbox_limit: int = 10
 
     # Scheduled sync + AI analysis
+    sync_poll_all_mailboxes: bool = True
     sync_target_email: str | None = None
     sync_interval_hours: float = 6.0
     database_url: str = "postgresql://zimbra:zimbra_dev@localhost:5432/zimbra_automation"

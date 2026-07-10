@@ -40,6 +40,7 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
   offset = 0;
   hasMore = false;
   statusFilter = '';
+  messageIdFilter = '';
 
   loading = false;
   loadingUsers = false;
@@ -97,6 +98,27 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
     this.loadLogs();
   }
 
+  onMessageIdSearch(): void {
+    this.messageIdFilter = this.messageIdFilter.trim();
+    this.resetList();
+    this.loadLogs();
+  }
+
+  onClearMessageIdSearch(): void {
+    this.messageIdFilter = '';
+    this.resetList();
+    this.loadLogs();
+  }
+
+  private logListOptions(): { limit: number; offset: number; status?: string; message_id?: string } {
+    return {
+      limit: this.limit,
+      offset: this.offset,
+      status: this.statusFilter || undefined,
+      message_id: this.messageIdFilter || undefined,
+    };
+  }
+
   resetList(): void {
     this.offset = 0;
     this.logs = [];
@@ -109,11 +131,7 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
       this.error = '';
     }
     this.automationService
-      .listLogs(this.selectedEmail, {
-        limit: this.limit,
-        offset: this.offset,
-        status: this.statusFilter || undefined,
-      })
+      .listLogs(this.selectedEmail, this.logListOptions())
       .subscribe({
         next: (res) => {
           this.logs = res.logs;
@@ -205,11 +223,7 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
   private refreshAfterRetry(messageId: string, result: MessageAutomationResult): void {
     if (!this.selectedEmail) return;
     this.automationService
-      .listLogs(this.selectedEmail, {
-        limit: this.limit,
-        offset: this.offset,
-        status: this.statusFilter || undefined,
-      })
+      .listLogs(this.selectedEmail, this.logListOptions())
       .subscribe({
         next: (res) => {
           this.logs = res.logs;

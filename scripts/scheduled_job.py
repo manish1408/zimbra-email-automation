@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Scheduled sync + AI analysis job for cron.
 
-Syncs the mailbox configured in SYNC_TARGET_EMAIL to the local database,
-then runs the automation pipeline on unanalyzed messages.
+Syncs all active Zimbra mailboxes (or a single SYNC_TARGET_EMAIL) to the local
+database, then runs the automation pipeline on unanalyzed messages.
 
 Cron example (every 6 hours — adjust SYNC_INTERVAL_HOURS in .env to match):
 
@@ -38,14 +38,31 @@ logging.basicConfig(
 logger = logging.getLogger("scheduled_job")
 
 
-async def run(args: argparse.Namespace) -> dict:
-    if not settings.sync_target_email and not args.account:
+def configure_poll_mode(args: argparse.Namespace) -> bool:
+    """Return True when polling all active mailboxes."""
+    if args.account:
+        settings.sync_poll_all_mailboxes = False
+        settings.sync_target_email = args.account
+        return False
+    if args.all:
+        settings.sync_poll_all_mailboxes = True
+        return True
+    if args.single:
+        settings.sync_poll_all_mailboxes = False
+        return False
+    return settings.sync_poll_all_mailboxes
+
+
+def validate_poll_mode(poll_all: bool) -> None:
+    if not poll_all and not settings.sync_target_email:
         raise SystemExit(
             "Set SYNC_TARGET_EMAIL in .env or pass --account user@example.com"
         )
 
-    if args.account:
-        settings.sync_target_email = args.account
+
+async def run(args: argparse.Namespace) -> dict:
+    poll_all = configure_poll_mode(args)
+    validate_poll_mode(poll_all)
 
     if args.dry_run:
         settings.automation_dry_run = True
@@ -64,6 +81,8 @@ async def run(args: argparse.Namespace) -> dict:
                 query=args.query,
                 process_all=True,
             )
+        if poll_all:
+            return await pipeline.run_all(skip_analysis=args.sync_only)
         return await pipeline.run(skip_analysis=args.sync_only)
     finally:
         await close_pool()
@@ -71,11 +90,21 @@ async def run(args: argparse.Namespace) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Sync target mailbox to local DB and run AI analysis"
+        description="Sync mailboxes to local DB and run AI analysis"
     )
     parser.add_argument(
         "--account",
-        help="Override SYNC_TARGET_EMAIL for this run",
+        help="Sync a single mailbox (overrides SYNC_POLL_ALL_MAILBOXES)",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Sync all active Zimbra mailboxes (overrides SYNC_POLL_ALL_MAILBOXES)",
+    )
+    parser.add_argument(
+        "--single",
+        action="store_true",
+        help="Sync only SYNC_TARGET_EMAIL (overrides SYNC_POLL_ALL_MAILBOXES)",
     )
     parser.add_argument(
         "--sync-only",
@@ -108,6 +137,9 @@ def main() -> None:
         help="Print suggested cron expression for this interval (does not run the job)",
     )
     args = parser.parse_args()
+
+    if args.all and args.single:
+        raise SystemExit("Use only one of --all or --single")
 
     if args.interval_hours is not None:
         hours = int(args.interval_hours) if args.interval_hours == int(args.interval_hours) else args.interval_hours

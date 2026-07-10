@@ -38,12 +38,13 @@ export class AutomationService {
 
   listLogs(
     email: string,
-    options: { limit?: number; offset?: number; status?: string } = {},
+    options: { limit?: number; offset?: number; status?: string; message_id?: string } = {},
   ): Observable<AutomationLogListResponse> {
     const params: Record<string, string | number> = {};
     if (options.limit != null) params['limit'] = options.limit;
     if (options.offset != null) params['offset'] = options.offset;
     if (options.status) params['status'] = options.status;
+    if (options.message_id) params['message_id'] = options.message_id;
     return this.api.get<AutomationLogListResponse>(
       `/automation/users/${this.api.encodeEmail(email)}/logs`,
       params,

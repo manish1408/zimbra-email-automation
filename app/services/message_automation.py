@@ -310,6 +310,7 @@ class MessageAutomationService:
         limit: int = 50,
         offset: int = 0,
         status: str | None = None,
+        message_id: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         conn = await self.repository.connect()
         try:
@@ -319,6 +320,7 @@ class MessageAutomationService:
                 limit=limit,
                 offset=offset,
                 status=status,
+                message_id=message_id,
             )
         finally:
             await conn.close()

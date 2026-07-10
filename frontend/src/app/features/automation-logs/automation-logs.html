@@ -17,7 +17,7 @@
   <div class="card shadow-sm mb-4">
     <div class="card-body">
       <div class="row g-3 align-items-end">
-        <div class="col-md-5">
+        <div class="col-lg-3 col-md-4">
           <label class="form-label small mb-1" for="logUserSelect">Mailbox</label>
           <select
             id="logUserSelect"
@@ -32,7 +32,7 @@
             }
           </select>
         </div>
-        <div class="col-md-3">
+        <div class="col-lg-2 col-md-3">
           <label class="form-label small mb-1" for="statusFilter">Status</label>
           <select
             id="statusFilter"
@@ -47,7 +47,38 @@
             <option value="skipped">Skipped</option>
           </select>
         </div>
-        <div class="col-md-4 text-md-end">
+        <div class="col-lg-5 col-md-5">
+          <label class="form-label small mb-1" for="messageIdFilter">Message ID</label>
+          <form class="d-flex gap-1" (submit)="$event.preventDefault(); onMessageIdSearch()">
+            <input
+              id="messageIdFilter"
+              type="search"
+              class="form-control form-control-sm"
+              placeholder="Message ID…"
+              [(ngModel)]="messageIdFilter"
+              name="messageIdFilter"
+              [disabled]="!selectedEmail"
+            />
+            <button
+              type="submit"
+              class="btn btn-sm btn-outline-primary text-nowrap"
+              [disabled]="!selectedEmail || loading"
+            >
+              Search
+            </button>
+            @if (messageIdFilter) {
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary text-nowrap"
+                [disabled]="!selectedEmail || loading"
+                (click)="onClearMessageIdSearch()"
+              >
+                Clear
+              </button>
+            }
+          </form>
+        </div>
+        <div class="col-lg-2 col-md-12 text-lg-end">
           <button
             type="button"
             class="btn btn-sm btn-outline-primary"
@@ -69,7 +100,13 @@
       <p class="text-muted small mt-2 mb-0">Loading logs…</p>
     </div>
   } @else if (!logs.length) {
-    <p class="text-muted">No automation logs found for this mailbox.</p>
+    <p class="text-muted">
+      @if (messageIdFilter) {
+        No logs match this Message ID.
+      } @else {
+        No automation logs found for this mailbox.
+      }
+    </p>
   } @else {
     <div class="table-responsive card shadow-sm">
       <table class="table table-sm table-hover mb-0 align-middle">

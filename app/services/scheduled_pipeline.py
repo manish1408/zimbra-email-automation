@@ -10,7 +10,7 @@ import asyncpg
 from app.services.action_pipeline import run_action_pipeline
 from app.config import Settings
 from app.db.email_repository import EmailRepository
-from app.models.schemas import MessageDetail
+from app.models.schemas import MessageDetail, User
 from app.services.email_sync import EmailSyncService
 from app.services.llm import llm_configured, llm_not_configured_message
 
@@ -44,6 +44,11 @@ def build_poll_query(
     return f"{base} is:unread"
 
 
+def _is_active_mailbox(user: User) -> bool:
+    status = (user.status or "").strip().lower()
+    return not status or status == "active"
+
+
 class ScheduledPipeline:
     """Syncs a target mailbox to the local DB and runs the automation action pipeline."""
 
@@ -57,6 +62,12 @@ class ScheduledPipeline:
         self.email_service = email_service or EmailSyncService(settings)
         self.repository = repository or EmailRepository(settings.database_url)
 
+    async def list_poll_accounts(self) -> list[str]:
+        """Return active mailbox emails to poll, sorted for stable ordering."""
+        users = (await self.email_service.list_users()).users
+        active = [user.email for user in users if _is_active_mailbox(user)]
+        return sorted(active)
+
     async def run(
         self,
         *,
@@ -69,41 +80,97 @@ class ScheduledPipeline:
 
         conn = await self.repository.connect()
         try:
-            sync_stats = await self._poll_and_sync(conn, target)
-            result: dict[str, Any] = {"account": target, "sync": sync_stats}
-
-            if skip_analysis:
-                result["analysis"] = {"skipped": True}
-                return result
-
-            if not llm_configured(self.settings):
-                logger.warning("LLM not configured; skipping AI analysis")
-                result["analysis"] = {
-                    "skipped": True,
-                    "reason": llm_not_configured_message(self.settings),
-                }
-                return result
-
-            if process_all:
-                batches: list[dict[str, Any]] = []
-                while True:
-                    stats = await self.run_action_pipeline(conn, target)
-                    batches.append(stats)
-                    if stats.get("skipped") or int(stats.get("message_count") or 0) == 0:
-                        break
-                remaining = await self.repository.count_unanalyzed(conn, target)
-                result["analysis"] = {
-                    "batches": len(batches),
-                    "batch_results": batches,
-                    "remaining_unanalyzed": remaining,
-                    "dry_run": self.settings.automation_dry_run,
-                }
-            else:
-                analysis_stats = await self.run_action_pipeline(conn, target)
-                result["analysis"] = analysis_stats
-            return result
+            return await self._run_for_account(
+                conn,
+                target,
+                skip_analysis=skip_analysis,
+                process_all=process_all,
+            )
         finally:
             await conn.close()
+
+    async def run_all(
+        self,
+        *,
+        skip_analysis: bool = False,
+        process_all: bool = False,
+    ) -> dict[str, Any]:
+        accounts = await self.list_poll_accounts()
+        result: dict[str, Any] = {
+            "mode": "all",
+            "accounts_total": len(accounts),
+            "accounts_succeeded": 0,
+            "accounts_failed": 0,
+            "results": {},
+            "errors": {},
+        }
+
+        if not accounts:
+            logger.warning("No active mailboxes found to poll")
+            return result
+
+        conn = await self.repository.connect()
+        try:
+            for account in accounts:
+                try:
+                    account_result = await self._run_for_account(
+                        conn,
+                        account,
+                        skip_analysis=skip_analysis,
+                        process_all=process_all,
+                    )
+                    result["results"][account] = account_result
+                    result["accounts_succeeded"] += 1
+                except Exception as exc:
+                    logger.exception("Poll cycle failed for %s", account)
+                    result["errors"][account] = str(exc)
+                    result["accounts_failed"] += 1
+        finally:
+            await conn.close()
+
+        return result
+
+    async def _run_for_account(
+        self,
+        conn: asyncpg.Connection,
+        account: str,
+        *,
+        skip_analysis: bool = False,
+        process_all: bool = False,
+    ) -> dict[str, Any]:
+        sync_stats = await self._poll_and_sync(conn, account)
+        result: dict[str, Any] = {"account": account, "sync": sync_stats}
+
+        if skip_analysis:
+            result["analysis"] = {"skipped": True}
+            return result
+
+        if not llm_configured(self.settings):
+            logger.warning("LLM not configured; skipping AI analysis for %s", account)
+            result["analysis"] = {
+                "skipped": True,
+                "reason": llm_not_configured_message(self.settings),
+            }
+            return result
+
+        if process_all:
+            batches: list[dict[str, Any]] = []
+            while True:
+                stats = await self.run_action_pipeline(conn, account)
+                batches.append(stats)
+                if stats.get("skipped") or int(stats.get("message_count") or 0) == 0:
+                    break
+            remaining = await self.repository.count_unanalyzed(conn, account)
+            result["analysis"] = {
+                "batches": len(batches),
+                "batch_results": batches,
+                "remaining_unanalyzed": remaining,
+                "dry_run": self.settings.automation_dry_run,
+            }
+        else:
+            analysis_stats = await self.run_action_pipeline(conn, account)
+            result["analysis"] = analysis_stats
+        return result
 
     async def run_action_pipeline(
         self,

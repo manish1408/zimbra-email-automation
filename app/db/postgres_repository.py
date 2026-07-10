@@ -377,68 +377,42 @@ class PostgresEmailRepository:
         limit: int = 50,
         offset: int = 0,
         status: str | None = None,
+        message_id: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
+        filters: list[str] = ["account = $1"]
+        params: list[Any] = [account]
+
         if status:
-            total = int(
-                await conn.fetchval(
-                    """
-                    SELECT COUNT(*) FROM message_automation_runs
-                    WHERE account = $1 AND status = $2
-                    """,
-                    account,
-                    status,
-                )
-                or 0
-            )
-            rows = await conn.fetch(
-                """
-                SELECT
-                    r.id, r.account, r.zimbra_id, r.thread_id, r.status, r.dry_run,
-                    COALESCE(r.subject, m.subject) AS subject,
-                    COALESCE(r.from_address, m.from_address) AS from_address,
-                    r.duration_ms, r.llm_duration_ms,
-                    r.classification_json, r.actions_json, r.error,
-                    r.automation_trace_json, r.created_at
-                FROM message_automation_runs r
-                LEFT JOIN messages m
-                    ON m.account = r.account AND m.zimbra_id = r.zimbra_id
-                WHERE r.account = $1 AND r.status = $2
-                ORDER BY r.created_at DESC
-                LIMIT $3 OFFSET $4
-                """,
-                account,
-                status,
-                limit,
-                offset,
-            )
-        else:
-            total = int(
-                await conn.fetchval(
-                    "SELECT COUNT(*) FROM message_automation_runs WHERE account = $1",
-                    account,
-                )
-                or 0
-            )
-            rows = await conn.fetch(
-                """
-                SELECT
-                    r.id, r.account, r.zimbra_id, r.thread_id, r.status, r.dry_run,
-                    COALESCE(r.subject, m.subject) AS subject,
-                    COALESCE(r.from_address, m.from_address) AS from_address,
-                    r.duration_ms, r.llm_duration_ms,
-                    r.classification_json, r.actions_json, r.error,
-                    r.automation_trace_json, r.created_at
-                FROM message_automation_runs r
-                LEFT JOIN messages m
-                    ON m.account = r.account AND m.zimbra_id = r.zimbra_id
-                WHERE r.account = $1
-                ORDER BY r.created_at DESC
-                LIMIT $2 OFFSET $3
-                """,
-                account,
-                limit,
-                offset,
-            )
+            params.append(status)
+            filters.append(f"status = ${len(params)}")
+        if message_id and message_id.strip():
+            params.append(message_id.strip())
+            filters.append(f"zimbra_id = ${len(params)}")
+
+        where = " AND ".join(filters)
+        count_sql = f"SELECT COUNT(*) FROM message_automation_runs WHERE {where}"
+        total = int(await conn.fetchval(count_sql, *params) or 0)
+
+        select_filters = [f"r.{clause}" for clause in filters]
+        select_where = " AND ".join(select_filters)
+        limit_idx = len(params) + 1
+        offset_idx = len(params) + 2
+        select_sql = f"""
+            SELECT
+                r.id, r.account, r.zimbra_id, r.thread_id, r.status, r.dry_run,
+                COALESCE(r.subject, m.subject) AS subject,
+                COALESCE(r.from_address, m.from_address) AS from_address,
+                r.duration_ms, r.llm_duration_ms,
+                r.classification_json, r.actions_json, r.error,
+                r.automation_trace_json, r.created_at
+            FROM message_automation_runs r
+            LEFT JOIN messages m
+                ON m.account = r.account AND m.zimbra_id = r.zimbra_id
+            WHERE {select_where}
+            ORDER BY r.created_at DESC
+            LIMIT ${limit_idx} OFFSET ${offset_idx}
+        """
+        rows = await conn.fetch(select_sql, *params, limit, offset)
         return [self._automation_log_row_to_dict(row) for row in rows], total
 
     async def get_message_automation_runs(

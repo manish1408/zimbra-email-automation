@@ -108,6 +108,9 @@ async def list_automation_logs(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     status: str | None = Query(default=None, description="Filter by status"),
+    message_id: str | None = Query(
+        default=None, description="Filter by Zimbra message ID (exact match)"
+    ),
     service: MessageAutomationService = Depends(get_automation_service),
 ):
     try:
@@ -116,6 +119,7 @@ async def list_automation_logs(
             limit=limit,
             offset=offset,
             status=status,
+            message_id=message_id,
         )
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc

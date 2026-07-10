@@ -183,7 +183,7 @@ ssh ${DEPLOY_USER}@${DEPLOY_HOST} "systemctl reload nginx"
 
 ## Mail poller control
 
-The mail poller runs as systemd service `zimbra-mail-poller` on the server. Control it from your **local machine** without SSH-ing manually.
+The mail poller runs as systemd service `zimbra-mail-poller` on the server. By default it polls **all active Zimbra mailboxes** each cycle (same sync + automation pipeline as before, but for every account). Control it from your **local machine** without SSH-ing manually.
 
 ### Setup (once)
 
@@ -299,11 +299,22 @@ Production config lives in `/opt/zimbra-email-automation/.env`. Key settings:
 |---|---|
 | `ZIMBRA_HOST` | Zimbra mail server hostname |
 | `ZIMBRA_ADMIN_USER` / `ZIMBRA_ADMIN_PASSWORD` | Admin credentials |
+| `ZIMBRA_DOMAIN_FILTER` | Optional domain filter for account discovery (e.g. `mail.gkhair.com`) |
 | `DATABASE_URL` | PostgreSQL connection (default: `postgresql://zimbra:zimbra_dev@localhost:5432/zimbra_automation`) |
-| `SYNC_TARGET_EMAIL` | Mailbox polled by mail poller |
+| `SYNC_POLL_ALL_MAILBOXES` | `true` (default) = poll all active mailboxes; `false` = single-mailbox mode |
+| `SYNC_TARGET_EMAIL` | Mailbox to poll when `SYNC_POLL_ALL_MAILBOXES=false` (debugging / legacy single-mailbox mode) |
 | `SYNC_POLL_INTERVAL_SECONDS` | Poll interval (default 60) |
 | `AUTOMATION_DRY_RUN` | `false` = live Zimbra moves/forwards |
 | `LLM_PROVIDER` / `VASTAI_*` | LLM agent configuration |
+
+After enabling multi-mailbox polling in production:
+
+1. Set `SYNC_POLL_ALL_MAILBOXES=true` in `/opt/zimbra-email-automation/.env` (default).
+2. `SYNC_TARGET_EMAIL` can remain but is ignored while polling all mailboxes.
+3. Restart the poller: `systemctl restart zimbra-mail-poller`.
+4. Verify logs show per-account poll lines: `journalctl -u zimbra-mail-poller -n 100 --no-pager`.
+
+If you have many mailboxes, increase `SYNC_POLL_INTERVAL_SECONDS` if poll cycles start overlapping.
 
 After editing `.env` locally, copy it up and restart:
 
@@ -371,11 +382,19 @@ Common causes: PostgreSQL container not running, bad `.env`, missing pip package
 
 ### Mail poller not syncing
 
+Check `SYNC_POLL_ALL_MAILBOXES`, Zimbra connectivity, and per-account errors in logs:
+
 ```bash
 journalctl -u zimbra-mail-poller -n 50 --no-pager
 ```
 
-Check `SYNC_TARGET_EMAIL` in `.env` and Zimbra connectivity:
+For single-mailbox debugging, set `SYNC_POLL_ALL_MAILBOXES=false` and `SYNC_TARGET_EMAIL` in `.env`, or run locally:
+
+```bash
+.venv/bin/python scripts/mail_poller.py --once --account user@example.com
+```
+
+Test Zimbra connectivity:
 
 ```bash
 curl http://127.0.0.1:8000/api/v1/system/test-connection
