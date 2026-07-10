@@ -32,6 +32,7 @@ class _RecordingConn:
 def _sample_log_row(message_id: str = "100") -> dict[str, Any]:
     return {
         "id": 1,
+        "account": "user@example.com",
         "zimbra_id": message_id,
         "thread_id": "thread-1",
         "status": "completed",
@@ -90,6 +91,20 @@ async def test_list_automation_logs_combines_message_id_and_status_filters():
     assert "r.status = $2" in select_sql
     assert "r.zimbra_id = $3" in select_sql
     assert select_params == ("user@example.com", "failed", "msg-99", 50, 0)
+
+
+@pytest.mark.asyncio
+async def test_list_automation_logs_all_mailboxes():
+    repo = PostgresEmailRepository("postgresql://test")
+    conn = _RecordingConn(rows=[_sample_log_row()])
+
+    logs, total = await repo.list_automation_logs(conn, None)
+
+    assert total == 1
+    assert len(logs) == 1
+    count_sql, count_params = conn.queries[0]
+    assert "account =" not in count_sql
+    assert count_params == ()
 
 
 @pytest.mark.asyncio

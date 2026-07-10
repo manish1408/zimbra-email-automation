@@ -217,6 +217,7 @@ class AutomationLogEntry(BaseModel):
     thread_id: str
     status: str
     dry_run: bool = False
+    account: str | None = None
     subject: str | None = None
     from_address: str | None = None
     duration_ms: int | None = None

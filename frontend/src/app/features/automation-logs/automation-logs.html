@@ -26,7 +26,7 @@
             (ngModelChange)="onUserSelect($event)"
             [disabled]="loadingUsers"
           >
-            <option value="">Select account…</option>
+            <option [value]="allMailboxesValue">All mailboxes</option>
             @for (user of users; track user.id) {
               <option [value]="user.email">{{ user.email }}</option>
             }
@@ -92,9 +92,7 @@
     </div>
   </div>
 
-  @if (!selectedEmail) {
-    <p class="text-muted">Select a mailbox to view automation logs.</p>
-  } @else if (loading) {
+  @if (loading) {
     <div class="text-center py-5">
       <div class="spinner-border text-primary" role="status"></div>
       <p class="text-muted small mt-2 mb-0">Loading logs…</p>
@@ -113,6 +111,9 @@
         <thead class="table-light">
           <tr>
             <th>Time</th>
+            @if (showAllMailboxes()) {
+              <th>Mailbox</th>
+            }
             <th>Subject</th>
             <th>From</th>
             <th>Status</th>
@@ -127,6 +128,11 @@
           @for (log of logs; track log.id) {
             <tr class="log-row" (click)="openDetail(log)">
               <td class="small text-nowrap">{{ formatDate(log.created_at) }}</td>
+              @if (showAllMailboxes()) {
+                <td class="small text-truncate" style="max-width: 12rem">
+                  {{ log.account || '—' }}
+                </td>
+              }
               <td class="text-truncate" style="max-width: 14rem">
                 {{ log.subject || '(no subject)' }}
               </td>
@@ -261,6 +267,10 @@
           </div>
 
           <dl class="row small mb-3 meta-dl">
+            @if (logAccount(selectedLog)) {
+              <dt class="col-sm-3">Mailbox</dt>
+              <dd class="col-sm-9"><code class="small">{{ logAccount(selectedLog) }}</code></dd>
+            }
             <dt class="col-sm-3">Message ID</dt>
             <dd class="col-sm-9"><code>{{ selectedLog.message_id }}</code></dd>
             <dt class="col-sm-3">Thread ID</dt>

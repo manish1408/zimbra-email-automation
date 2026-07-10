@@ -325,6 +325,27 @@ class MessageAutomationService:
         finally:
             await conn.close()
 
+    async def list_all_automation_logs(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+        message_id: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        conn = await self.repository.connect()
+        try:
+            return await self.repository.list_automation_logs(
+                conn,
+                None,
+                limit=limit,
+                offset=offset,
+                status=status,
+                message_id=message_id,
+            )
+        finally:
+            await conn.close()
+
     async def _persist_run(
         self,
         account: str,

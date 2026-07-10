@@ -160,6 +160,7 @@ export interface AutomationLogEntry {
   thread_id: string;
   status: string;
   dry_run: boolean;
+  account?: string | null;
   subject?: string | null;
   from_address?: string | null;
   duration_ms?: number | null;

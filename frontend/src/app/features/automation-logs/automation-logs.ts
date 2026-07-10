@@ -26,8 +26,10 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
   private readonly automationService = inject(AutomationService);
   private readonly document = inject(DOCUMENT);
 
+  readonly allMailboxesValue = '__all__';
+
   users: User[] = [];
-  selectedEmail = '';
+  selectedEmail = this.allMailboxesValue;
   logs: AutomationLogEntry[] = [];
   selectedLog: AutomationLogEntry | null = null;
   detailResult: MessageAutomationResult | null = null;
@@ -54,12 +56,11 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
       const email = params.get('userEmail');
       if (email) {
         this.selectedEmail = decodeURIComponent(email);
-        this.resetList();
-        this.loadLogs();
       } else {
-        this.selectedEmail = '';
-        this.logs = [];
+        this.selectedEmail = this.allMailboxesValue;
       }
+      this.resetList();
+      this.loadLogs();
     });
   }
 
@@ -86,11 +87,19 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
   }
 
   onUserSelect(email: string): void {
-    if (!email) {
+    if (!email || email === this.allMailboxesValue) {
       this.router.navigate(['/automation-logs']);
       return;
     }
     this.router.navigate(['/automation-logs', encodeURIComponent(email)]);
+  }
+
+  showAllMailboxes(): boolean {
+    return this.selectedEmail === this.allMailboxesValue;
+  }
+
+  logAccount(log: AutomationLogEntry): string {
+    return log.account || this.selectedEmail;
   }
 
   onStatusFilterChange(): void {
@@ -130,9 +139,10 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
       this.loading = true;
       this.error = '';
     }
-    this.automationService
-      .listLogs(this.selectedEmail, this.logListOptions())
-      .subscribe({
+    const request = this.showAllMailboxes()
+      ? this.automationService.listAllLogs(this.logListOptions())
+      : this.automationService.listLogs(this.selectedEmail, this.logListOptions());
+    request.subscribe({
         next: (res) => {
           this.logs = res.logs;
           this.total = res.total;
@@ -167,13 +177,13 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
     this.showRawJson = false;
     this.setBodyScrollLock(true);
 
-    if (!this.selectedEmail) {
+    if (!this.logAccount(log)) {
       this.detailLoading = false;
       return;
     }
 
     this.automationService
-      .getResult(this.selectedEmail, log.message_id)
+      .getResult(this.logAccount(log), log.message_id)
       .pipe(catchError(() => of(null)))
       .subscribe({
         next: (res) => {
@@ -196,18 +206,20 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
 
   openInInbox(log: AutomationLogEntry, event?: Event): void {
     event?.stopPropagation();
-    if (!this.selectedEmail) return;
+    const account = this.logAccount(log);
+    if (!account || account === this.allMailboxesValue) return;
     this.closeDetail();
-    this.router.navigate(['/inbox', encodeURIComponent(this.selectedEmail)]);
+    this.router.navigate(['/inbox', encodeURIComponent(account)]);
   }
 
   retry(log: AutomationLogEntry, event?: Event): void {
     event?.stopPropagation();
-    if (!this.selectedEmail || this.retryingId === log.id) return;
+    const account = this.logAccount(log);
+    if (!account || account === this.allMailboxesValue || this.retryingId === log.id) return;
     this.retryingId = log.id;
     this.error = '';
     this.retrySuccess = '';
-    this.automationService.run(this.selectedEmail, log.message_id, true).subscribe({
+    this.automationService.run(account, log.message_id, true).subscribe({
       next: (result) => {
         this.retryingId = null;
         this.retrySuccess = `Re-run completed (${result.status}).`;
@@ -221,10 +233,15 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
   }
 
   private refreshAfterRetry(messageId: string, result: MessageAutomationResult): void {
-    if (!this.selectedEmail) return;
-    this.automationService
-      .listLogs(this.selectedEmail, this.logListOptions())
-      .subscribe({
+    const account = this.logAccount(this.selectedLog!);
+    if (!account || account === this.allMailboxesValue) {
+      this.loadLogs(true);
+      return;
+    }
+    const request = this.showAllMailboxes()
+      ? this.automationService.listAllLogs(this.logListOptions())
+      : this.automationService.listLogs(account, this.logListOptions());
+    request.subscribe({
         next: (res) => {
           this.logs = res.logs;
           this.total = res.total;

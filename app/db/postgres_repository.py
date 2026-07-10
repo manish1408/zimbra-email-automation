@@ -372,15 +372,19 @@ class PostgresEmailRepository:
     async def list_automation_logs(
         self,
         conn: asyncpg.Connection,
-        account: str,
+        account: str | None = None,
         *,
         limit: int = 50,
         offset: int = 0,
         status: str | None = None,
         message_id: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
-        filters: list[str] = ["account = $1"]
-        params: list[Any] = [account]
+        filters: list[str] = []
+        params: list[Any] = []
+
+        if account:
+            params.append(account)
+            filters.append(f"account = ${len(params)}")
 
         if status:
             params.append(status)
@@ -389,12 +393,12 @@ class PostgresEmailRepository:
             params.append(message_id.strip())
             filters.append(f"zimbra_id = ${len(params)}")
 
-        where = " AND ".join(filters)
+        where = " AND ".join(filters) if filters else "TRUE"
         count_sql = f"SELECT COUNT(*) FROM message_automation_runs WHERE {where}"
         total = int(await conn.fetchval(count_sql, *params) or 0)
 
         select_filters = [f"r.{clause}" for clause in filters]
-        select_where = " AND ".join(select_filters)
+        select_where = " AND ".join(select_filters) if select_filters else "TRUE"
         limit_idx = len(params) + 1
         offset_idx = len(params) + 2
         select_sql = f"""
@@ -603,6 +607,7 @@ class PostgresEmailRepository:
 
         return {
             "id": row["id"],
+            "account": row.get("account"),
             "message_id": row["zimbra_id"],
             "thread_id": row["thread_id"],
             "status": row["status"],
