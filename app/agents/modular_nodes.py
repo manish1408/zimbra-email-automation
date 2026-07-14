@@ -87,11 +87,13 @@ def _rule_classification(
     message: dict[str, Any],
     rule: dict[str, Any],
 ) -> MessageClassification:
+    category = rule.get("set_category") or "rule_matched"
+    is_spam = category == "spam"
     return MessageClassification(
         message_id=msg_id,
         subject=message.get("subject"),
-        category=rule.get("set_category") or "rule_matched",
-        is_spam=False,
+        category=category,
+        is_spam=is_spam,
         confidence=1.0,
         requested_person=None,
         needs_live_agent=False,
@@ -143,7 +145,7 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             record: MessageActionRecord = {
                 "message_id": msg_id,
                 "category": result.set_category or "rule_matched",
-                "is_spam": False,
+                "is_spam": (result.set_category or "") == "spam",
                 "folder_path": result.move_to_folder,
                 "folder_moved": False,
                 "forwarded_to": None,

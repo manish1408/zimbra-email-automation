@@ -119,6 +119,7 @@ class ClassificationService:
                 "\n".join(
                     [
                         f"### Message id={msg_id}",
+                        f"From: {message.get('from') or message.get('from_address') or '(unknown)'}",
                         f"Subject: {message.get('subject') or '(no subject)'}",
                         f"Body:\n{_message_body(message) or '(empty)'}",
                     ]

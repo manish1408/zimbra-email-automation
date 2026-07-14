@@ -27,7 +27,7 @@ categories:
     forward_to: billing@gkhair.com
     send_ack: true
   careers:
-    folder: Careers
+    folder: Human Resources
     forward_to: hr@gkhair.com
     send_ack: true
   orders:

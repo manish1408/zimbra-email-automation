@@ -132,6 +132,14 @@ def _draft_instruction(
         return "Answer the customer's order status question using the Shopify context."
     if outcome == "invoice_found":
         return "Help the customer with their invoice request using the Shopify context."
+    if classification.get("category") == "careers":
+        return (
+            "This is a job application or careers enquiry. Thank the applicant briefly "
+            "for their interest in GK Hair. Clearly state that their email is being "
+            "forwarded to the HR (Human Resources) department for further review. "
+            "Do not evaluate their qualifications, promise an interview, or invent "
+            "hiring timelines. Keep the reply short and professional."
+        )
     return "Write an appropriate support reply based on the thread."
 
 

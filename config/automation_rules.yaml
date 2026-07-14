@@ -10,6 +10,50 @@ rules:
       mark_analyzed: true
       set_category: undelivered
 
+  - id: swift_tt_payment_scam
+    enabled: true
+    priority: 12
+    match:
+      subject_regex: "(?i)(SWIFT\\s+Ref|TT\\s*/[\\d-]+|wire\\s+transfer\\s+(ref|confirmation))"
+    actions:
+      move_to_folder: Junk
+      skip_llm: true
+      mark_analyzed: true
+      set_category: spam
+
+  - id: swift_tt_payment_scam_body
+    enabled: true
+    priority: 13
+    match:
+      header_contains: "TT payment remitted"
+    actions:
+      move_to_folder: Junk
+      skip_llm: true
+      mark_analyzed: true
+      set_category: spam
+
+  - id: toner_cartridge_cold_spam
+    enabled: true
+    priority: 14
+    match:
+      header_contains: "toner cartridge"
+    actions:
+      move_to_folder: Junk
+      skip_llm: true
+      mark_analyzed: true
+      set_category: spam
+
+  - id: toner_cartridge_cold_spam_alt
+    enabled: true
+    priority: 15
+    match:
+      subject_regex: "(?i)(toner|ink\\s*cartridge|printer\\s*cartridge)"
+    actions:
+      move_to_folder: Junk
+      skip_llm: true
+      mark_analyzed: true
+      set_category: spam
+
   - id: gk_hair_noreply_ignore
     enabled: true
     priority: 20
@@ -43,20 +87,31 @@ rules:
       mark_analyzed: true
       set_category: platform_notification
 
-  - id: postscript_conversations_platform
+  - id: postscriptapp_customer_support
     enabled: true
     priority: 31
     match:
-      from_address_regex: "^conversations\\+.*@postscript\\.io$"
+      from_address_regex: "(?i)(postscriptapp\\.com|conversations\\+.+@postscript\\.io$)"
     actions:
-      move_to_folder: Platform Notifications
+      move_to_folder: Customer Support
       skip_llm: true
       mark_analyzed: true
-      set_category: platform_notification
+      set_category: customer_support
+
+  - id: klaviyo_customer_support
+    enabled: true
+    priority: 32
+    match:
+      from_address_regex: "(?i)@([^@]*\\.)?klaviyo\\.com$"
+    actions:
+      move_to_folder: Customer Support
+      skip_llm: true
+      mark_analyzed: true
+      set_category: customer_support
 
   - id: didww_sms_forwarding_platform
     enabled: true
-    priority: 32
+    priority: 33
     match:
       from_address: "sms-forwarding@didww.com"
     actions:

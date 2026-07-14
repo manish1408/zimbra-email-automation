@@ -74,7 +74,7 @@ def test_shopify_audiences_platform(rules):
     assert result.move_to_folder == "Platform Notifications"
 
 
-def test_postscript_platform(rules):
+def test_postscriptapp_customer_support(rules):
     message = {
         "from": (
             '"conversations+651824709=mg postscriptapp com" '
@@ -84,7 +84,65 @@ def test_postscript_platform(rules):
     }
     result = evaluate_message(message, rules)
     assert result.matched
-    assert result.move_to_folder == "Platform Notifications"
+    assert result.rule_id == "postscriptapp_customer_support"
+    assert result.move_to_folder == "Customer Support"
+    assert result.set_category == "customer_support"
+    assert result.skip_llm
+
+
+def test_swift_tt_payment_scam(rules):
+    message = {
+        "from": "sales@aquacloud.ink",
+        "subject": "SWIFT Ref No: TT /810-363295460/Amount: USD 11,480.25",
+        "body": (
+            "Please find attached TT payment remitted to your company today. "
+            "Kindly check with the bank and confirm the receipt of the payment."
+        ),
+    }
+    result = evaluate_message(message, rules)
+    assert result.matched
+    assert result.rule_id == "swift_tt_payment_scam"
+    assert result.move_to_folder == "Junk"
+    assert result.set_category == "spam"
+    assert result.skip_llm
+
+
+def test_toner_cartridge_cold_spam(rules):
+    message = {
+        "from": "sonuseokumar@outlook.com",
+        "subject": "Re:",
+        "body": (
+            "Hi Need toner cartridges? We offer OEM, Premium Compatible, "
+            "and USA Remanufactured cartridges at great prices."
+        ),
+    }
+    result = evaluate_message(message, rules)
+    assert result.matched
+    assert result.rule_id == "toner_cartridge_cold_spam"
+    assert result.move_to_folder == "Junk"
+    assert result.set_category == "spam"
+    assert result.skip_llm
+
+
+def test_klaviyo_customer_support(rules):
+    message = {
+        "from": '"Klaviyo" <notifications@klaviyo.com>',
+        "subject": "Customer message",
+    }
+    result = evaluate_message(message, rules)
+    assert result.matched
+    assert result.rule_id == "klaviyo_customer_support"
+    assert result.move_to_folder == "Customer Support"
+    assert result.set_category == "customer_support"
+    assert result.skip_llm
+
+
+def test_klaviyo_subdomain_customer_support(rules):
+    message = {"from": "reply@mail.klaviyo.com", "subject": "Reply"}
+    result = evaluate_message(message, rules)
+    assert result.matched
+    assert result.rule_id == "klaviyo_customer_support"
+    assert result.move_to_folder == "Customer Support"
 
 
 def test_didww_platform(rules):
