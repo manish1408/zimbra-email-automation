@@ -115,7 +115,7 @@
             <th>Status</th>
             <th>Duration</th>
             <th>LLM</th>
-            <th>Actions</th>
+            <th>Outcome</th>
             <th>Error</th>
             <th class="text-end">Actions</th>
           </tr>
@@ -145,7 +145,28 @@
               </td>
               <td class="small">{{ formatMs(log.duration_ms) }}</td>
               <td class="small">{{ formatMs(log.llm_duration_ms) }}</td>
-              <td class="small">{{ actionsSummary(log) }}</td>
+              <td>
+                <div class="d-flex flex-wrap gap-1">
+                  <span
+                    class="badge"
+                    [class.text-bg-danger]="movedToSpam(log)"
+                    [class.text-bg-light]="!movedToSpam(log)"
+                    [class.border]="!movedToSpam(log)"
+                    [class.text-dark]="!movedToSpam(log)"
+                  >
+                    {{ movedToSpam(log) ? 'Moved to spam' : 'Not moved to spam' }}
+                  </span>
+                  <span
+                    class="badge"
+                    [class.text-bg-success]="draftGenerated(log)"
+                    [class.text-bg-light]="!draftGenerated(log)"
+                    [class.border]="!draftGenerated(log)"
+                    [class.text-dark]="!draftGenerated(log)"
+                  >
+                    {{ draftGenerated(log) ? 'Draft generated' : 'No draft' }}
+                  </span>
+                </div>
+              </td>
               <td class="small text-danger text-truncate" style="max-width: 12rem">
                 {{ log.error || '—' }}
               </td>
@@ -253,6 +274,24 @@
           <div class="d-flex flex-wrap gap-2 mb-3">
             <span class="badge text-capitalize" [ngClass]="statusClass(detailStatus())">
               {{ detailStatus() }}
+            </span>
+            <span
+              class="badge"
+              [class.text-bg-danger]="movedToSpam(selectedLog)"
+              [class.text-bg-light]="!movedToSpam(selectedLog)"
+              [class.border]="!movedToSpam(selectedLog)"
+              [class.text-dark]="!movedToSpam(selectedLog)"
+            >
+              {{ movedToSpam(selectedLog) ? 'Moved to spam' : 'Not moved to spam' }}
+            </span>
+            <span
+              class="badge"
+              [class.text-bg-success]="draftGenerated(selectedLog)"
+              [class.text-bg-light]="!draftGenerated(selectedLog)"
+              [class.border]="!draftGenerated(selectedLog)"
+              [class.text-dark]="!draftGenerated(selectedLog)"
+            >
+              {{ draftGenerated(selectedLog) ? 'Draft generated' : 'No draft' }}
             </span>
             <span class="badge text-bg-light border text-dark">
               Total {{ formatMs(selectedLog.duration_ms) }}
@@ -373,21 +412,26 @@
               <div class="card-header py-2 small fw-semibold">Actions taken</div>
               <div class="card-body py-3">
                 <div class="d-flex flex-wrap gap-2">
-                  @if (actions['folder_moved']) {
-                    <span class="badge text-bg-primary">Moved to folder</span>
-                  }
+                  <span
+                    class="badge"
+                    [class.text-bg-danger]="movedToSpam(selectedLog)"
+                    [class.text-bg-light]="!movedToSpam(selectedLog)"
+                    [class.border]="!movedToSpam(selectedLog)"
+                    [class.text-dark]="!movedToSpam(selectedLog)"
+                  >
+                    {{ movedToSpam(selectedLog) ? 'Moved to spam' : 'Not moved to spam' }}
+                  </span>
+                  <span
+                    class="badge"
+                    [class.text-bg-success]="draftGenerated(selectedLog)"
+                    [class.text-bg-light]="!draftGenerated(selectedLog)"
+                    [class.border]="!draftGenerated(selectedLog)"
+                    [class.text-dark]="!draftGenerated(selectedLog)"
+                  >
+                    {{ draftGenerated(selectedLog) ? 'Draft generated' : 'No draft' }}
+                  </span>
                   @if (actions['forwarded_to']) {
                     <span class="badge text-bg-info text-dark">Forwarded</span>
-                  }
-                  @if (actions['draft_saved']) {
-                    <span class="badge text-bg-secondary">Response draft saved</span>
-                  }
-                  @if (
-                    !actions['folder_moved'] &&
-                    !actions['forwarded_to'] &&
-                    !actions['draft_saved']
-                  ) {
-                    <span class="text-muted small">No Zimbra actions applied</span>
                   }
                 </div>
               </div>

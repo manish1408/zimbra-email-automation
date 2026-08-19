@@ -127,7 +127,7 @@ def test_resolve_rule_folder_uses_global_spam_folder():
     assert resolve_rule_folder(rules, "spam") == "Junk"
 
 
-def test_resolve_rule_folder_uses_inbox_category_folder():
+def test_resolve_rule_folder_ignores_non_spam_categories():
     rules = merge_classification_rules(
         ClassificationRules.from_api_dict(_global_payload()),
         mailbox_payload_to_rules(
@@ -138,7 +138,7 @@ def test_resolve_rule_folder_uses_inbox_category_folder():
             }
         ),
     )
-    assert resolve_rule_folder(rules, "platform_notification") == "Platform Notifications"
+    assert resolve_rule_folder(rules, "platform_notification") is None
 
 
 def test_resolve_rule_folder_skips_missing_inbox_category():

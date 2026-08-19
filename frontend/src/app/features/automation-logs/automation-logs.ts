@@ -309,14 +309,28 @@ export class AutomationLogsComponent implements OnInit, OnDestroy {
     return `${Math.round(n * 100)}%`;
   }
 
-  actionsSummary(log: AutomationLogEntry): string {
-    const actions = log.actions;
-    if (!actions) return '—';
-    const parts: string[] = [];
-    if (actions['folder_moved']) parts.push('moved');
-    if (actions['forwarded_to']) parts.push('forwarded');
-    if (actions['draft_saved']) parts.push('draft');
-    return parts.length ? parts.join(', ') : actions['folder_path'] ? 'folder set' : '—';
+  private logActions(log: AutomationLogEntry | null): Record<string, unknown> {
+    return (log?.actions ?? this.detailResult?.actions ?? {}) as Record<string, unknown>;
+  }
+
+  private logClassification(log: AutomationLogEntry | null): Record<string, unknown> {
+    return (log?.classification ?? this.detailResult?.classification ?? {}) as Record<string, unknown>;
+  }
+
+  movedToSpam(log: AutomationLogEntry | null): boolean {
+    const actions = this.logActions(log);
+    if (typeof actions['moved_to_spam'] === 'boolean') {
+      return actions['moved_to_spam'];
+    }
+    if (!actions['folder_moved']) return false;
+    const folder = String(actions['folder_path'] ?? '').trim().toLowerCase();
+    return this.logClassification(log)['is_spam'] === true || folder === 'junk' || folder === 'spam';
+  }
+
+  draftGenerated(log: AutomationLogEntry | null): boolean {
+    const actions = this.logActions(log);
+    const draftText = this.detailResult?.draft_reply_text;
+    return Boolean(actions['draft_saved'] || (typeof draftText === 'string' && draftText.trim()));
   }
 
   traceSteps(log: AutomationLogEntry | null): Array<Record<string, unknown>> {

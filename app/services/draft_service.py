@@ -10,11 +10,28 @@ from pydantic import BaseModel, Field
 from app.agents.state import MessageClassification
 from app.config import Settings
 from app.services.agent_training import augment_system_prompt
+from app.services.automation_rules import parse_email_address
 from app.services.email_thread import build_thread_context
 from app.services.llm import ainvoke_structured, create_chat_llm, llm_configured
 from app.services.shopify.order_reference import ReferenceExtractionResult
 
 logger = logging.getLogger(__name__)
+
+
+def mailbox_is_direct_to_recipient(account: str, message: dict[str, Any]) -> bool:
+    """True when the mailbox is on the To line, not only CC/Bcc."""
+    account_email = parse_email_address(account) or account.strip().lower()
+    if not account_email:
+        return False
+    to_vals = message.get("to") or message.get("to_addresses") or []
+    if isinstance(to_vals, str):
+        to_vals = [to_vals]
+    to_emails = {
+        parsed
+        for raw in to_vals
+        if (parsed := parse_email_address(str(raw)))
+    }
+    return account_email in to_emails
 
 
 class DraftResult(BaseModel):

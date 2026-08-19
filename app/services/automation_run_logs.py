@@ -5,12 +5,20 @@ from typing import Any
 from app.db.email_repository import EmailRepository
 
 
+def _is_spam_folder(folder_path: Any) -> bool:
+    return str(folder_path or "").strip().lower() in {"junk", "spam"}
+
+
 def _actions_from_record(record: dict[str, Any]) -> dict[str, Any]:
+    folder_path = record.get("folder_path")
+    folder_moved = bool(record.get("folder_moved"))
     return {
-        "folder_path": record.get("folder_path"),
-        "folder_moved": bool(record.get("folder_moved")),
+        "folder_path": folder_path,
+        "folder_moved": folder_moved,
         "forwarded_to": record.get("forwarded_to"),
         "draft_saved": bool(record.get("draft_saved")),
+        "moved_to_spam": folder_moved
+        and (bool(record.get("is_spam")) or _is_spam_folder(folder_path)),
     }
 
 

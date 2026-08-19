@@ -44,8 +44,10 @@ class ActionExecutor:
         account: str,
         message: dict[str, Any],
         classification: MessageClassification,
-    ) -> tuple[str, bool]:
+    ) -> tuple[str | None, bool]:
         folder_name = self.resolver.folder_for_classification(classification)
+        if not folder_name:
+            return None, False
         msg_id = classification["message_id"]
         moved = await self._move_to_folder(conn, account, message, msg_id, folder_name)
         return folder_name, moved
@@ -168,28 +170,24 @@ class ActionExecutor:
             # Use reply-all thread context so opening the email shows this draft inline.
             reply_type="w",
         )
-        if draft_id:
-            folder_name = self.settings.automation_auto_replies_folder
-            folder_id = await self.email_service.ensure_folder(account, folder_name)
-            await self.email_service.move_message(account, draft_id, folder_id)
-            logger.info(
-                "Moved draft %s for message %s to folder %s",
-                draft_id,
-                msg_id,
-                folder_name,
-            )
-        else:
-            logger.warning(
-                "Draft for message %s saved without id; cannot move to %s",
-                msg_id,
-                self.settings.automation_auto_replies_folder,
-            )
+        if not draft_id:
+            logger.warning("Draft for message %s saved without id", msg_id)
         logger.info(
             "Saved reply-all draft for message %s (to=%s, cc=%d)",
             msg_id,
             to_addr,
             len(cc_addresses),
         )
+
+    def _spam_folder_name(self) -> str:
+        rules = getattr(self.resolver, "rules", None)
+        config = getattr(rules, "config", None)
+        name = getattr(config, "spam_folder", None) or "Junk"
+        return str(name).strip() or "Junk"
+
+    def _is_spam_folder(self, folder_name: str) -> bool:
+        allowed = self._spam_folder_name().lower()
+        return (folder_name or "").strip().lower() == allowed
 
     async def _move_to_folder(
         self,
@@ -199,6 +197,15 @@ class ActionExecutor:
         msg_id: str,
         folder_name: str,
     ) -> bool:
+        if not self._is_spam_folder(folder_name):
+            logger.info(
+                "Skipping folder move for %s → %s; only %s is allowed",
+                msg_id,
+                folder_name,
+                self._spam_folder_name(),
+            )
+            return False
+
         if not self.settings.automation_move_to_folders:
             logger.info("Folder moves disabled; skipping move for %s", msg_id)
             return False

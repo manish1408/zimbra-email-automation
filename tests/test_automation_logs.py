@@ -223,6 +223,8 @@ async def test_persist_message_automation_logs_inserts_rows():
     assert call["subject"] == "Help"
     assert call["from_address"] == "c@example.com"
     assert call["dry_run"] is True
+    assert call["actions"]["moved_to_spam"] is False
+    assert call["actions"]["draft_saved"] is False
 
 
 def test_llm_duration_contextvar():

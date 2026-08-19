@@ -11,7 +11,7 @@ from app.agents.state import MessageActionRecord, MessageClassification, Pipelin
 from app.services.automation_rules import evaluate_message, load_automation_rules
 from app.services.classification_rules import resolve_rule_folder
 from app.services.classification_service import ClassificationService
-from app.services.draft_service import DraftService, build_shopify_context_payload
+from app.services.draft_service import DraftService, build_shopify_context_payload, mailbox_is_direct_to_recipient
 from app.services.email_thread import build_thread_context
 from app.services.llm import llm_configured
 from app.services.automation_run_logs import persist_message_automation_logs
@@ -423,9 +423,17 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 folder_name, moved = await ctx.executor.apply_folder_move(
                     conn, account, message, classification
                 )
-                record["folder_path"] = folder_name
-                record["folder_moved"] = moved
-                _trace(traces, msg_id, "apply_routing_actions", "folder_move", True, folder=folder_name)
+                if folder_name:
+                    record["folder_path"] = folder_name
+                    record["folder_moved"] = moved
+                    _trace(
+                        traces,
+                        msg_id,
+                        "apply_routing_actions",
+                        "folder_move",
+                        True,
+                        folder=folder_name,
+                    )
 
                 route_target = classification.get("route_target")
                 if ctx.resolver.should_forward(classification) and route_target:
@@ -468,6 +476,9 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 continue
             if not classification.get("needs_response_generation"):
                 continue
+            message = by_id.get(msg_id)
+            if not message or not mailbox_is_direct_to_recipient(account, message):
+                continue
             if classification.get("is_spam") or classification.get("needs_live_agent"):
                 continue
             wants_shopify = classification.get("is_order_status_question") or classification.get(
@@ -475,10 +486,6 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             )
             if not wants_shopify:
                 shopify_context[msg_id] = {"outcome": "none"}
-                continue
-
-            message = by_id.get(msg_id)
-            if not message:
                 continue
 
             related: list[dict[str, Any]] = []
@@ -582,6 +589,16 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             message = by_id.get(msg_id)
             if not message:
                 continue
+            if not mailbox_is_direct_to_recipient(account, message):
+                _trace(
+                    traces,
+                    msg_id,
+                    "generate_drafts",
+                    "skip_not_direct_to",
+                    True,
+                    account=account,
+                )
+                continue
 
             related: list[dict[str, Any]] = []
             try:
@@ -643,6 +660,8 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
 
             message = by_id.get(msg_id)
             if not message:
+                continue
+            if not mailbox_is_direct_to_recipient(account, message):
                 continue
 
             record = action_records.get(msg_id) or {

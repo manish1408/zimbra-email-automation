@@ -237,24 +237,16 @@ def resolve_rule_folder(
     rules: ClassificationRules | None,
     set_category: str | None,
 ) -> str | None:
-    """Folder for a YAML matcher, using inbox categories (spam uses global folder).
-
-    Returns None when the inbox has no matching category so undeclared folders
-    are not created.
-    """
+    """Return the Junk/spam folder only. Other YAML categories are not moved."""
     if rules is None:
         return None
     slug = (set_category or "").strip()
-    if not slug:
-        return None
     if slug == "spam":
-        return rules.config.spam_folder
+        return rules.config.spam_folder or "Junk"
     category = rules.get_category(slug)
-    if not category:
-        return None
-    if category.is_spam:
-        return rules.config.spam_folder
-    return category.folder
+    if category and category.is_spam:
+        return rules.config.spam_folder or "Junk"
+    return None
 
 
 async def load_classification_rules(

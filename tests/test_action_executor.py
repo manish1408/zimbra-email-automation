@@ -7,7 +7,10 @@ import pytest
 from app.agents.state import MessageClassification
 from app.config import Settings
 from app.services.action_executor import ActionExecutor
-from app.services.draft_service import build_shopify_context_payload
+from app.services.draft_service import (
+    build_shopify_context_payload,
+    mailbox_is_direct_to_recipient,
+)
 from app.services.zimbra.mail_client import ZimbraMessage
 from app.services.shopify.order_reference import ReferenceExtractionResult
 
@@ -36,12 +39,8 @@ async def test_apply_response_draft_calls_save_draft():
     email_service.save_draft.assert_awaited_once()
     _, kwargs = email_service.save_draft.await_args
     assert kwargs["reply_type"] == "w"
-    email_service.ensure_folder.assert_awaited_once_with(
-        "user@example.com", "Auto Replies"
-    )
-    email_service.move_message.assert_awaited_once_with(
-        "user@example.com", "draft-1", "folder-1"
-    )
+    email_service.ensure_folder.assert_not_awaited()
+    email_service.move_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -79,9 +78,8 @@ async def test_apply_response_draft_uses_reply_all_recipients():
     assert kwargs["to_address"] == "customer@example.com"
     assert kwargs["cc_addresses"] == ["team@example.com", "manager@example.com"]
     assert kwargs["reply_type"] == "w"
-    email_service.move_message.assert_awaited_once_with(
-        "agent@example.com", "draft-1", "folder-1"
-    )
+    email_service.ensure_folder.assert_not_awaited()
+    email_service.move_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -161,3 +159,101 @@ def test_shopify_context_reference_required():
     ref = ReferenceExtractionResult()
     payload = build_shopify_context_payload(classification, ref)
     assert payload["outcome"] == "reference_required"
+
+
+def test_mailbox_is_direct_to_recipient_requires_to_header():
+    account = "gk07@gkhair.com"
+    assert mailbox_is_direct_to_recipient(
+        account,
+        {"to": ["gk07@gkhair.com", "orders@gkhair.com"]},
+    )
+    assert mailbox_is_direct_to_recipient(
+        account,
+        {"to_addresses": ['"GK Hair" <gk07@gkhair.com>']},
+    )
+    assert not mailbox_is_direct_to_recipient(
+        account,
+        {"to": ["orders@gkhair.com"], "cc": ["gk07@gkhair.com"]},
+    )
+    assert not mailbox_is_direct_to_recipient(
+        account,
+        {"to": ["meghan.mchugh@gkhair.com"]},
+    )
+    assert not mailbox_is_direct_to_recipient(account, {"to": []})
+
+
+def _executor(*, dry_run: bool = False):
+    settings = Settings(
+        zimbra_host="x",
+        zimbra_admin_user="a",
+        zimbra_admin_password="b",
+        automation_dry_run=dry_run,
+        automation_move_to_folders=True,
+    )
+    email_service = AsyncMock()
+    email_service.ensure_folder.return_value = "junk-id"
+    repository = AsyncMock()
+    resolver = MagicMock()
+    resolver.rules.config.spam_folder = "Junk"
+    return (
+        ActionExecutor(settings, email_service, repository, resolver),
+        email_service,
+        repository,
+        resolver,
+    )
+
+
+@pytest.mark.asyncio
+async def test_rule_folder_move_skips_non_junk():
+    executor, email_service, repository, _resolver = _executor()
+    moved = await executor.apply_rule_folder_move(
+        MagicMock(),
+        "user@example.com",
+        {"id": "1", "folder": "2"},
+        "Billing",
+    )
+    assert moved is False
+    email_service.ensure_folder.assert_not_awaited()
+    email_service.move_message.assert_not_awaited()
+    repository.update_message_folder.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_rule_folder_move_junk_creates_and_moves():
+    executor, email_service, repository, _resolver = _executor()
+    moved = await executor.apply_rule_folder_move(
+        MagicMock(),
+        "user@example.com",
+        {"id": "1", "folder": "2"},
+        "Junk",
+    )
+    assert moved is True
+    email_service.ensure_folder.assert_awaited_once_with("user@example.com", "Junk")
+    email_service.move_message.assert_awaited_once_with(
+        "user@example.com", "1", "junk-id"
+    )
+    repository.update_message_folder.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_folder_move_skips_non_spam_classification():
+    executor, email_service, _repository, resolver = _executor()
+    resolver.folder_for_classification.return_value = None
+    classification = MessageClassification(
+        message_id="1",
+        category="billing",
+        is_spam=False,
+        confidence=1.0,
+        requested_person=None,
+        needs_live_agent=False,
+        reasoning="",
+    )
+    folder_name, moved = await executor.apply_folder_move(
+        MagicMock(),
+        "user@example.com",
+        {"id": "1"},
+        classification,
+    )
+    assert folder_name is None
+    assert moved is False
+    email_service.ensure_folder.assert_not_awaited()

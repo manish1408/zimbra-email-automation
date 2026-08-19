@@ -53,14 +53,13 @@ class RoutingResolver:
 
         return rule.forward_to or self.rules.config.default_forward
 
-    def folder_for_classification(self, classification: MessageClassification) -> str:
+    def folder_for_classification(self, classification: MessageClassification) -> str | None:
         if classification.get("is_spam"):
-            return self.rules.config.spam_folder
-        rule = self.resolve_category_rule(classification["category"])
-        if rule:
-            return rule.folder
-        fallback = self.rules.fallback_category()
-        return fallback.folder if fallback else self.rules.config.spam_folder
+            return self.rules.config.spam_folder or "Junk"
+        rule = self.resolve_category_rule(classification.get("category", ""))
+        if rule and rule.is_spam:
+            return self.rules.config.spam_folder or "Junk"
+        return None
 
     def should_draft_reply(self, classification: MessageClassification) -> bool:
         if classification.get("is_spam"):
