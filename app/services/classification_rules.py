@@ -5,6 +5,8 @@ from typing import Any
 
 from app.db.email_repository import EmailRepository
 
+GLOBAL_ACCOUNT = ""
+
 
 @dataclass
 class CategoryRule:
@@ -58,9 +60,13 @@ class ClassificationRules:
         return None
 
     def fallback_category(self) -> CategoryRule | None:
-        return self.get_category("general") or (
-            self.enabled_categories()[0] if self.enabled_categories() else None
-        )
+        general = self.get_category("general")
+        if general and not general.is_spam:
+            return general
+        for category in self.enabled_categories():
+            if not category.is_spam:
+                return category
+        return None
 
     def employee_index(self) -> dict[str, str]:
         index: dict[str, str] = {}
@@ -172,17 +178,124 @@ class ClassificationRules:
         }
 
 
-async def load_classification_rules(
-    repository: EmailRepository, conn: Any | None = None
+def merge_instructions(*parts: str | None) -> str:
+    chunks = [part.strip() for part in parts if part and part.strip()]
+    return "\n\n".join(chunks)
+
+
+def mailbox_payload_to_rules(data: dict[str, Any]) -> ClassificationRules:
+    """Adapt a mailbox API payload into ClassificationRules for merging."""
+    return ClassificationRules.from_api_dict(
+        {
+            "config": {
+                "spam_folder": "Junk",
+                "default_forward": data.get("default_forward"),
+                "ack_template": "",
+                "classification_instructions": data.get("extra_instructions") or "",
+            },
+            "categories": data.get("categories") or [],
+            "employees": [],
+            "updated_at": data.get("updated_at"),
+        }
+    )
+
+
+def merge_classification_rules(
+    global_rules: ClassificationRules,
+    mailbox_rules: ClassificationRules | None = None,
 ) -> ClassificationRules:
-    data = await repository.get_classification_rules(conn)
-    return ClassificationRules.from_api_dict(data)
+    """Combine global spam rules with an inbox's independent categories."""
+    global_cats = [c for c in global_rules.categories if c.is_spam]
+    mailbox_cats: list[CategoryRule] = []
+    extra = ""
+    default_forward = global_rules.config.default_forward
+    updated_at = global_rules.updated_at
+    if mailbox_rules:
+        mailbox_cats = [c for c in mailbox_rules.categories if not c.is_spam]
+        extra = mailbox_rules.config.classification_instructions or ""
+        if mailbox_rules.config.default_forward:
+            default_forward = mailbox_rules.config.default_forward
+        updated_at = mailbox_rules.updated_at or updated_at
+
+    return ClassificationRules(
+        config=ClassificationConfig(
+            spam_folder=global_rules.config.spam_folder,
+            default_forward=default_forward,
+            ack_template=global_rules.config.ack_template,
+            classification_instructions=merge_instructions(
+                global_rules.config.classification_instructions,
+                extra,
+            ),
+        ),
+        categories=global_cats + mailbox_cats,
+        employees=list(global_rules.employees),
+        updated_at=updated_at,
+    )
 
 
-async def save_classification_rules(
+def resolve_rule_folder(
+    rules: ClassificationRules | None,
+    set_category: str | None,
+) -> str | None:
+    """Folder for a YAML matcher, using inbox categories (spam uses global folder).
+
+    Returns None when the inbox has no matching category so undeclared folders
+    are not created.
+    """
+    if rules is None:
+        return None
+    slug = (set_category or "").strip()
+    if not slug:
+        return None
+    if slug == "spam":
+        return rules.config.spam_folder
+    category = rules.get_category(slug)
+    if not category:
+        return None
+    if category.is_spam:
+        return rules.config.spam_folder
+    return category.folder
+
+
+async def load_classification_rules(
+    repository: EmailRepository,
+    conn: Any | None = None,
+    *,
+    account: str | None = None,
+) -> ClassificationRules:
+    global_data = await repository.get_global_classification_rules(conn)
+    global_rules = ClassificationRules.from_api_dict(global_data)
+    if not account:
+        return global_rules
+
+    mailbox_data = await repository.get_mailbox_classification_rules(account, conn)
+    if not mailbox_data.get("categories"):
+        mailbox_data = await repository.seed_mailbox_classification_rules(account, conn)
+    mailbox_rules = mailbox_payload_to_rules(mailbox_data)
+    return merge_classification_rules(global_rules, mailbox_rules)
+
+
+async def save_global_classification_rules(
     repository: EmailRepository,
     rules: ClassificationRules,
     conn: Any | None = None,
 ) -> ClassificationRules:
-    data = await repository.save_classification_rules(rules.to_api_dict(), conn)
+    data = await repository.save_global_classification_rules(rules.to_api_dict(), conn)
     return ClassificationRules.from_api_dict(data)
+
+
+async def save_mailbox_classification_rules(
+    repository: EmailRepository,
+    account: str,
+    payload: dict[str, Any],
+    conn: Any | None = None,
+) -> dict[str, Any]:
+    return await repository.save_mailbox_classification_rules(account, payload, conn)
+
+
+async def seed_mailbox_classification_rules(
+    repository: EmailRepository,
+    account: str,
+    conn: Any | None = None,
+) -> dict[str, Any]:
+    return await repository.seed_mailbox_classification_rules(account, conn)

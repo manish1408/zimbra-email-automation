@@ -302,6 +302,7 @@ Production config lives in `/opt/zimbra-email-automation/.env`. Key settings:
 | `ZIMBRA_DOMAIN_FILTER` | Optional domain filter for account discovery (e.g. `mail.gkhair.com`) |
 | `DATABASE_URL` | PostgreSQL connection (default: `postgresql://zimbra:zimbra_dev@localhost:5432/zimbra_automation`) |
 | `SYNC_POLL_ALL_MAILBOXES` | `true` (default) = poll all active mailboxes; `false` = single-mailbox mode |
+| `SYNC_MAILBOXES` | Optional comma-separated allowlist. When set, only these active mailboxes are polled |
 | `SYNC_TARGET_EMAIL` | Mailbox to poll when `SYNC_POLL_ALL_MAILBOXES=false` (debugging / legacy single-mailbox mode) |
 | `SYNC_POLL_INTERVAL_SECONDS` | Poll interval (default 60) |
 | `AUTOMATION_DRY_RUN` | `false` = live Zimbra moves/forwards |

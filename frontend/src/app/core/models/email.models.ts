@@ -118,6 +118,14 @@ export interface ClassificationRules {
   updated_at: string | null;
 }
 
+export interface MailboxClassificationRules {
+  account: string;
+  extra_instructions: string;
+  default_forward: string | null;
+  categories: ClassificationCategory[];
+  updated_at: string | null;
+}
+
 export interface MessageMetadata {
   zimbra_id: string;
   account: string;

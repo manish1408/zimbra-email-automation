@@ -11,11 +11,12 @@ import {
 } from '../../core/models/email.models';
 import { AutomationService } from '../../core/services/automation.service';
 import { UsersService } from '../../core/services/users.service';
+import { MailboxSelectComponent } from '../../shared/mailbox-select/mailbox-select';
 
 @Component({
   selector: 'app-automation-logs',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, MailboxSelectComponent],
   templateUrl: './automation-logs.html',
   styleUrl: './automation-logs.scss',
 })

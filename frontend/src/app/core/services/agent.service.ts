@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { AgentTraining, ClassificationRules } from '../models/email.models';
+import { AgentTraining } from '../models/email.models';
 import { ApiClient } from './api-client.service';
 
 @Injectable({ providedIn: 'root' })
@@ -21,13 +21,5 @@ export class AgentService {
     return this.api.put<AgentTraining>('/agent/training/draft-reply-rules', {
       draft_reply_rules: draftReplyRules,
     });
-  }
-
-  getClassificationRules(): Observable<ClassificationRules> {
-    return this.api.get<ClassificationRules>('/agent/classification-rules');
-  }
-
-  saveClassificationRules(rules: ClassificationRules): Observable<ClassificationRules> {
-    return this.api.put<ClassificationRules>('/agent/classification-rules', rules);
   }
 }

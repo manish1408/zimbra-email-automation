@@ -114,8 +114,10 @@ async def poll_loop(
 ) -> None:
     if poll_all:
         accounts = await pipeline.list_poll_accounts()
+        allowlist = settings.sync_mailbox_allowlist
         logger.info(
-            "Starting mail poller for all active mailboxes (%d accounts, interval=%ds, dry_run=%s, process_all=%s)",
+            "Starting mail poller for %s (%d accounts, interval=%ds, dry_run=%s, process_all=%s)",
+            f"allowlist {allowlist}" if allowlist else "all active mailboxes",
             len(accounts),
             interval,
             settings.automation_dry_run,

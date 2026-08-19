@@ -54,7 +54,7 @@ INSERT INTO classification_categories (
     ('customer_support', 'Customer Support', 'Product help, complaints, and support requests needing a human.', 'Customer Support', 'info@gkhair.com', TRUE, TRUE, FALSE, FALSE, FALSE, 80),
     ('enquiry', 'Enquiry', 'General questions and sales enquiries.', 'Enquiries', 'info@gkhair.com', TRUE, TRUE, FALSE, FALSE, FALSE, 90),
     ('general', 'General', 'Everything else that does not fit another category.', 'General', 'info@gkhair.com', TRUE, FALSE, FALSE, FALSE, FALSE, 100)
-ON CONFLICT (slug) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 INSERT INTO classification_employees (name, email, aliases)
 SELECT 'meghan', 'meghan@gkhair.com', '["meghan smith", "meghan.smith"]'::jsonb

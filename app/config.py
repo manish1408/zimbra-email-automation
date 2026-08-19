@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # Scheduled sync + AI analysis
     sync_poll_all_mailboxes: bool = True
     sync_target_email: str | None = None
+    # Comma/newline-separated mailbox allowlist. When set, automation polls
+    # only these active accounts (SYNC_POLL_ALL_MAILBOXES still uses run_all).
+    sync_mailboxes: str = ""
     sync_interval_hours: float = 6.0
     database_url: str = "postgresql://zimbra:zimbra_dev@localhost:5432/zimbra_automation"
     sync_fetch_bodies: bool = True
@@ -56,6 +59,18 @@ class Settings(BaseSettings):
     shopify_bot_base_url: str = "https://bot.gkhair.com"
     shopify_bot_api_key: str = ""
     shopify_bot_timeout_seconds: float = 30.0
+
+    @property
+    def sync_mailbox_allowlist(self) -> list[str]:
+        raw = self.sync_mailboxes or ""
+        seen: set[str] = set()
+        emails: list[str] = []
+        for chunk in raw.replace("\n", ",").replace(";", ",").split(","):
+            email = chunk.strip().lower()
+            if email and email not in seen:
+                seen.add(email)
+                emails.append(email)
+        return emails
 
     @property
     def scheme(self) -> str:

@@ -63,10 +63,31 @@ class ScheduledPipeline:
         self.repository = repository or EmailRepository(settings.database_url)
 
     async def list_poll_accounts(self) -> list[str]:
-        """Return active mailbox emails to poll, sorted for stable ordering."""
+        """Return active mailbox emails to poll.
+
+        When SYNC_MAILBOXES is set, only those accounts are returned (allowlist
+        order). Otherwise all active mailboxes are returned, sorted.
+        """
         users = (await self.email_service.list_users()).users
         active = [user.email for user in users if _is_active_mailbox(user)]
-        return sorted(active)
+        allowlist = self.settings.sync_mailbox_allowlist
+        if not allowlist:
+            return sorted(active)
+
+        active_by_email = {email.lower(): email for email in active}
+        selected: list[str] = []
+        missing: list[str] = []
+        for wanted in allowlist:
+            match = active_by_email.get(wanted)
+            if match:
+                selected.append(match)
+            else:
+                missing.append(wanted)
+        if missing:
+            logger.warning(
+                "SYNC_MAILBOXES not found or inactive: %s", ", ".join(missing)
+            )
+        return selected
 
     async def run(
         self,

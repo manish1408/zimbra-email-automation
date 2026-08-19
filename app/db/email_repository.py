@@ -56,10 +56,29 @@ class EmailRepository:
     ) -> dict[str, Any]:
         return await self._backend.upsert_agent_draft_reply_rules(draft_reply_rules, conn)
 
-    async def get_classification_rules(self, conn: DbConnection | None = None) -> dict[str, Any]:
-        return await self._backend.get_classification_rules(conn)
+    async def get_global_classification_rules(
+        self, conn: DbConnection | None = None
+    ) -> dict[str, Any]:
+        return await self._backend.get_global_classification_rules(conn)
 
-    async def save_classification_rules(
+    async def save_global_classification_rules(
         self, payload: dict[str, Any], conn: DbConnection | None = None
     ) -> dict[str, Any]:
-        return await self._backend.save_classification_rules(payload, conn)
+        return await self._backend.save_global_classification_rules(payload, conn)
+
+    async def get_mailbox_classification_rules(
+        self, account: str, conn: DbConnection | None = None
+    ) -> dict[str, Any]:
+        return await self._backend.get_mailbox_classification_rules(account, conn)
+
+    async def save_mailbox_classification_rules(
+        self, account: str, payload: dict[str, Any], conn: DbConnection | None = None
+    ) -> dict[str, Any]:
+        return await self._backend.save_mailbox_classification_rules(
+            account, payload, conn
+        )
+
+    async def seed_mailbox_classification_rules(
+        self, account: str, conn: DbConnection | None = None
+    ) -> dict[str, Any]:
+        return await self._backend.seed_mailbox_classification_rules(account, conn)

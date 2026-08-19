@@ -15,6 +15,62 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+def _category_dict(row: Any) -> dict[str, Any]:
+    return {
+        "slug": row["slug"],
+        "display_name": row["display_name"],
+        "classification_hints": row["classification_hints"] or "",
+        "folder": row["folder"],
+        "forward_to": row["forward_to"],
+        "send_ack": row["send_ack"],
+        "needs_live_agent": row["needs_live_agent"],
+        "is_spam": row["is_spam"],
+        "route_by_person": row["route_by_person"],
+        "skip_forward": row["skip_forward"],
+        "sort_order": row["sort_order"],
+        "enabled": row["enabled"],
+    }
+
+
+def _employee_dict(row: Any) -> dict[str, Any]:
+    aliases = row["aliases"]
+    if isinstance(aliases, str):
+        aliases = json.loads(aliases)
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "email": row["email"],
+        "aliases": aliases or [],
+    }
+
+
+async def _insert_category(
+    conn: asyncpg.Connection, account: str, item: dict[str, Any]
+) -> None:
+    await conn.execute(
+        """
+        INSERT INTO classification_categories (
+            account, slug, display_name, classification_hints, folder, forward_to,
+            send_ack, needs_live_agent, is_spam, route_by_person,
+            skip_forward, sort_order, enabled
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        """,
+        account,
+        item["slug"],
+        item["display_name"],
+        item.get("classification_hints") or "",
+        item["folder"],
+        item.get("forward_to"),
+        bool(item.get("send_ack", True)),
+        bool(item.get("needs_live_agent", False)),
+        bool(item.get("is_spam", False)),
+        bool(item.get("route_by_person", False)),
+        bool(item.get("skip_forward", False)),
+        int(item.get("sort_order") or 0),
+        bool(item.get("enabled", True)),
+    )
+
+
 class PostgresEmailRepository:
     """Async PostgreSQL store for synced mailbox messages and analysis runs."""
 
@@ -728,7 +784,7 @@ class PostgresEmailRepository:
             if own_conn and conn is not None:
                 await conn.close()
 
-    async def get_classification_rules(
+    async def get_global_classification_rules(
         self, conn: asyncpg.Connection | None = None
     ) -> dict[str, Any]:
         own_conn = conn is None
@@ -748,6 +804,7 @@ class PostgresEmailRepository:
                        send_ack, needs_live_agent, is_spam, route_by_person,
                        skip_forward, sort_order, enabled
                 FROM classification_categories
+                WHERE account = ''
                 ORDER BY sort_order, slug
                 """
             )
@@ -776,49 +833,20 @@ class PostgresEmailRepository:
             }
 
         updated_at = config_row["updated_at"]
-        employees: list[dict[str, Any]] = []
-        for row in employee_rows:
-            aliases = row["aliases"]
-            if isinstance(aliases, str):
-                aliases = json.loads(aliases)
-            employees.append(
-                {
-                    "id": row["id"],
-                    "name": row["name"],
-                    "email": row["email"],
-                    "aliases": aliases or [],
-                }
-            )
-
         return {
             "config": {
                 "spam_folder": config_row["spam_folder"],
                 "default_forward": config_row["default_forward"],
                 "ack_template": config_row["ack_template"] or "",
-                "classification_instructions": config_row["classification_instructions"] or "",
+                "classification_instructions": config_row["classification_instructions"]
+                or "",
             },
-            "categories": [
-                {
-                    "slug": row["slug"],
-                    "display_name": row["display_name"],
-                    "classification_hints": row["classification_hints"] or "",
-                    "folder": row["folder"],
-                    "forward_to": row["forward_to"],
-                    "send_ack": row["send_ack"],
-                    "needs_live_agent": row["needs_live_agent"],
-                    "is_spam": row["is_spam"],
-                    "route_by_person": row["route_by_person"],
-                    "skip_forward": row["skip_forward"],
-                    "sort_order": row["sort_order"],
-                    "enabled": row["enabled"],
-                }
-                for row in category_rows
-            ],
-            "employees": employees,
+            "categories": [_category_dict(row) for row in category_rows],
+            "employees": [_employee_dict(row) for row in employee_rows],
             "updated_at": updated_at.isoformat() if updated_at else None,
         }
 
-    async def save_classification_rules(
+    async def save_global_classification_rules(
         self, payload: dict[str, Any], conn: asyncpg.Connection | None = None
     ) -> dict[str, Any]:
         config = payload.get("config") or {}
@@ -850,29 +878,11 @@ class PostgresEmailRepository:
                     config.get("classification_instructions") or "",
                     now,
                 )
-                await conn.execute("DELETE FROM classification_categories")
+                await conn.execute(
+                    "DELETE FROM classification_categories WHERE account = ''"
+                )
                 for item in categories:
-                    await conn.execute(
-                        """
-                        INSERT INTO classification_categories (
-                            slug, display_name, classification_hints, folder, forward_to,
-                            send_ack, needs_live_agent, is_spam, route_by_person,
-                            skip_forward, sort_order, enabled
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                        """,
-                        item["slug"],
-                        item["display_name"],
-                        item.get("classification_hints") or "",
-                        item["folder"],
-                        item.get("forward_to"),
-                        bool(item.get("send_ack", True)),
-                        bool(item.get("needs_live_agent", False)),
-                        bool(item.get("is_spam", False)),
-                        bool(item.get("route_by_person", False)),
-                        bool(item.get("skip_forward", False)),
-                        int(item.get("sort_order") or 0),
-                        bool(item.get("enabled", True)),
-                    )
+                    await _insert_category(conn, "", item)
                 await conn.execute("DELETE FROM classification_employees")
                 for item in employees:
                     await conn.execute(
@@ -888,4 +898,154 @@ class PostgresEmailRepository:
             if own_conn and conn is not None:
                 await conn.close()
 
-        return await self.get_classification_rules(conn if not own_conn else None)
+        return await self.get_global_classification_rules(
+            conn if not own_conn else None
+        )
+
+    async def get_mailbox_classification_rules(
+        self, account: str, conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any]:
+        own_conn = conn is None
+        if own_conn:
+            conn = await self.connect()
+        try:
+            config_row = await conn.fetchrow(
+                """
+                SELECT extra_instructions, default_forward, updated_at
+                FROM mailbox_classification_config
+                WHERE account = $1
+                """,
+                account,
+            )
+            category_rows = await conn.fetch(
+                """
+                SELECT slug, display_name, classification_hints, folder, forward_to,
+                       send_ack, needs_live_agent, is_spam, route_by_person,
+                       skip_forward, sort_order, enabled
+                FROM classification_categories
+                WHERE account = $1
+                ORDER BY sort_order, slug
+                """,
+                account,
+            )
+        finally:
+            if own_conn and conn is not None:
+                await conn.close()
+
+        updated_at = config_row["updated_at"] if config_row else None
+        return {
+            "account": account,
+            "extra_instructions": (
+                (config_row["extra_instructions"] or "") if config_row else ""
+            ),
+            "default_forward": config_row["default_forward"] if config_row else None,
+            "categories": [_category_dict(row) for row in category_rows],
+            "updated_at": updated_at.isoformat() if updated_at else None,
+        }
+
+    async def save_mailbox_classification_rules(
+        self,
+        account: str,
+        payload: dict[str, Any],
+        conn: asyncpg.Connection | None = None,
+    ) -> dict[str, Any]:
+        categories = payload.get("categories") or []
+        now = _utc_now()
+
+        own_conn = conn is None
+        if own_conn:
+            conn = await self.connect()
+        try:
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO mailbox_classification_config (
+                        account, extra_instructions, default_forward, updated_at
+                    ) VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (account) DO UPDATE SET
+                        extra_instructions = EXCLUDED.extra_instructions,
+                        default_forward = EXCLUDED.default_forward,
+                        updated_at = EXCLUDED.updated_at
+                    """,
+                    account,
+                    payload.get("extra_instructions") or "",
+                    payload.get("default_forward"),
+                    now,
+                )
+                await conn.execute(
+                    "DELETE FROM classification_categories WHERE account = $1",
+                    account,
+                )
+                for item in categories:
+                    await _insert_category(conn, account, item)
+        finally:
+            if own_conn and conn is not None:
+                await conn.close()
+
+        return await self.get_mailbox_classification_rules(
+            account, conn if not own_conn else None
+        )
+
+    async def seed_mailbox_classification_rules(
+        self, account: str, conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any]:
+        own_conn = conn is None
+        if own_conn:
+            conn = await self.connect()
+        try:
+            async with conn.transaction():
+                global_forward = await conn.fetchval(
+                    "SELECT default_forward FROM classification_config WHERE id = 1"
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO mailbox_classification_config (
+                        account, extra_instructions, default_forward, updated_at
+                    ) VALUES ($1, '', $2, NOW())
+                    ON CONFLICT (account) DO NOTHING
+                    """,
+                    account,
+                    global_forward,
+                )
+                templates = await conn.fetch(
+                    """
+                    SELECT slug, display_name, classification_hints, folder, forward_to,
+                           send_ack, needs_live_agent, is_spam, route_by_person,
+                           skip_forward, sort_order, enabled
+                    FROM classification_category_templates
+                    ORDER BY sort_order, slug
+                    """
+                )
+                for row in templates:
+                    await conn.execute(
+                        """
+                        INSERT INTO classification_categories (
+                            account, slug, display_name, classification_hints, folder,
+                            forward_to, send_ack, needs_live_agent, is_spam,
+                            route_by_person, skip_forward, sort_order, enabled
+                        ) VALUES (
+                            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+                        )
+                        ON CONFLICT (account, slug) DO NOTHING
+                        """,
+                        account,
+                        row["slug"],
+                        row["display_name"],
+                        row["classification_hints"] or "",
+                        row["folder"],
+                        row["forward_to"],
+                        row["send_ack"],
+                        row["needs_live_agent"],
+                        row["is_spam"],
+                        row["route_by_person"],
+                        row["skip_forward"],
+                        row["sort_order"],
+                        row["enabled"],
+                    )
+        finally:
+            if own_conn and conn is not None:
+                await conn.close()
+
+        return await self.get_mailbox_classification_rules(
+            account, conn if not own_conn else None
+        )

@@ -68,7 +68,9 @@ async def run_action_pipeline(
                 state.setdefault("draft_reply_rules", draft_reply_rules)
             if state.get("classification_rules") is None:
                 state["classification_rules"] = await load_classification_rules(
-                    email_repository, conn
+                    email_repository,
+                    conn,
+                    account=state.get("user_email"),
                 )
 
         rules = state.get("classification_rules")

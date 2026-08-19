@@ -9,6 +9,7 @@ from typing import Any, Iterator
 from app.agents.action_nodes import ActionNodeContext, make_base_action_nodes
 from app.agents.state import MessageActionRecord, MessageClassification, PipelineState
 from app.services.automation_rules import evaluate_message, load_automation_rules
+from app.services.classification_rules import resolve_rule_folder
 from app.services.classification_service import ClassificationService
 from app.services.draft_service import DraftService, build_shopify_context_payload
 from app.services.email_thread import build_thread_context
@@ -130,13 +131,17 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             if not result.matched:
                 continue
 
+            resolved_folder = resolve_rule_folder(
+                state.get("classification_rules"),
+                result.set_category,
+            )
             rule_data = {
                 "matched": True,
                 "rule_id": result.rule_id,
                 "no_action": result.no_action,
                 "skip_llm": result.skip_llm,
                 "mark_analyzed": result.mark_analyzed,
-                "move_to_folder": result.move_to_folder,
+                "move_to_folder": resolved_folder,
                 "set_category": result.set_category,
             }
             rule_results[msg_id] = rule_data
@@ -146,7 +151,7 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 "message_id": msg_id,
                 "category": result.set_category or "rule_matched",
                 "is_spam": (result.set_category or "") == "spam",
-                "folder_path": result.move_to_folder,
+                "folder_path": resolved_folder,
                 "folder_moved": False,
                 "forwarded_to": None,
                 "draft_saved": False,
@@ -160,30 +165,30 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                 action_records[msg_id] = record
                 continue
 
-            if result.move_to_folder and conn is not None:
+            if resolved_folder and conn is not None:
                 try:
                     moved = await ctx.executor.apply_rule_folder_move(
                         conn,
                         state["user_email"],
                         message,
-                        result.move_to_folder,
+                        resolved_folder,
                     )
                     record["folder_moved"] = moved
-                    record["folder_path"] = result.move_to_folder
+                    record["folder_path"] = resolved_folder
                     _trace(
                         traces,
                         msg_id,
                         "apply_automation_rules",
                         "move_to_folder",
                         True,
-                        folder=result.move_to_folder,
+                        folder=resolved_folder,
                     )
                 except Exception as exc:
                     if result.skip_llm:
                         logger.warning(
                             "Non-fatal rule folder move failed for %s → %s: %s",
                             msg_id,
-                            result.move_to_folder,
+                            resolved_folder,
                             exc,
                         )
                         record["folder_moved"] = False
@@ -207,9 +212,17 @@ def make_modular_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
                             False,
                             error=str(exc),
                         )
-                action_records[msg_id] = record
-            elif result.move_to_folder:
-                action_records[msg_id] = record
+            elif resolved_folder:
+                _trace(
+                    traces,
+                    msg_id,
+                    "apply_automation_rules",
+                    "move_to_folder",
+                    True,
+                    folder=resolved_folder,
+                    skipped_no_conn=True,
+                )
+            action_records[msg_id] = record
 
         return {
             "rule_results": rule_results,

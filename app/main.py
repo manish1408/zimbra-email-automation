@@ -34,7 +34,11 @@ OPENAPI_TAGS = [
     },
     {
         "name": "Agent",
-        "description": "Global agent training and classification/routing rules.",
+        "description": "Global agent training for general behavior and draft replies.",
+    },
+    {
+        "name": "Classification",
+        "description": "Global spam filtering and per-inbox classification categories and folders.",
     },
 ]
 
@@ -108,7 +112,8 @@ def create_app() -> FastAPI:
                 "agent_training": "GET /api/v1/agent/training",
                 "agent_general_rules": "PUT /api/v1/agent/training/general-rules",
                 "agent_draft_reply_rules": "PUT /api/v1/agent/training/draft-reply-rules",
-                "classification_rules": "GET/PUT /api/v1/agent/classification-rules",
+                "classification_global": "GET/PUT /api/v1/classification/global",
+                "classification_mailbox": "GET/PUT /api/v1/classification/mailboxes/{email}",
             },
         }
 

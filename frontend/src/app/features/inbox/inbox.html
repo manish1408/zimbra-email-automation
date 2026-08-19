@@ -3,23 +3,14 @@
   <div class="inbox-toolbar border-bottom bg-white px-3 py-2 d-flex flex-wrap align-items-center gap-3">
     <div class="d-flex align-items-center gap-2 flex-grow-1">
       <label class="form-label mb-0 text-muted small">Mailbox</label>
-      <select
-        class="form-select form-select-sm user-select"
-        [ngModel]="selectedEmail"
-        (ngModelChange)="onUserSelect($event)"
-      >
-        <option value="">Choose a mailbox…</option>
-        @for (user of filteredUsers; track user.email) {
-          <option [value]="user.email">
-            {{ user.display_name ? user.display_name + ' — ' : '' }}{{ user.email }}
-          </option>
-        }
-      </select>
-      <input
-        type="search"
-        class="form-control form-control-sm user-filter"
-        placeholder="Filter users…"
-        [(ngModel)]="userFilter"
+      <app-mailbox-select
+        class="user-select"
+        [users]="users"
+        [value]="selectedEmail"
+        [disabled]="loadingUsers"
+        emptyLabel="Choose a mailbox…"
+        placeholder="Search mailboxes…"
+        (valueChange)="onUserSelect($event)"
       />
     </div>
 

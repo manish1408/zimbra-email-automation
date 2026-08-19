@@ -18,19 +18,15 @@
     <div class="card-body">
       <div class="row g-3 align-items-end">
         <div class="col-lg-3 col-md-4">
-          <label class="form-label small mb-1" for="logUserSelect">Mailbox</label>
-          <select
-            id="logUserSelect"
-            class="form-select form-select-sm"
-            [ngModel]="selectedEmail"
-            (ngModelChange)="onUserSelect($event)"
+          <label class="form-label small mb-1">Mailbox</label>
+          <app-mailbox-select
+            [users]="users"
+            [value]="selectedEmail"
             [disabled]="loadingUsers"
-          >
-            <option [value]="allMailboxesValue">All mailboxes</option>
-            @for (user of users; track user.id) {
-              <option [value]="user.email">{{ user.email }}</option>
-            }
-          </select>
+            placeholder="Search mailboxes…"
+            [extraOptions]="[{ value: allMailboxesValue, label: 'All mailboxes' }]"
+            (valueChange)="onUserSelect($event)"
+          />
         </div>
         <div class="col-lg-2 col-md-3">
           <label class="form-label small mb-1" for="statusFilter">Status</label>

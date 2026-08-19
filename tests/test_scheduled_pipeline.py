@@ -16,6 +16,7 @@ def _settings(**overrides) -> Settings:
         "zimbra_admin_password": "secret",
         "sync_target_email": "info@example.com",
         "sync_poll_all_mailboxes": False,
+        "sync_mailboxes": "",
     }
     base.update(overrides)
     return Settings(**base)
@@ -59,6 +60,32 @@ async def test_list_poll_accounts_filters_and_sorts():
         "alpha@example.com",
         "legacy@example.com",
         "zeta@example.com",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_list_poll_accounts_respects_sync_mailboxes_allowlist():
+    settings = _settings(
+        sync_poll_all_mailboxes=True,
+        sync_mailboxes="Zeta@example.com, missing@example.com, alpha@example.com",
+    )
+    email_service = MagicMock()
+    email_service.list_users = AsyncMock(
+        return_value=UserListResponse(
+            total=4,
+            users=[
+                User(id="2", email="zeta@example.com", status="active"),
+                User(id="1", email="alpha@example.com", status="active"),
+                User(id="3", email="closed@example.com", status="closed"),
+                User(id="4", email="legacy@example.com", status=None),
+            ],
+        )
+    )
+    pipeline = ScheduledPipeline(settings, email_service=email_service)
+
+    assert await pipeline.list_poll_accounts() == [
+        "zeta@example.com",
+        "alpha@example.com",
     ]
 
 

@@ -68,6 +68,10 @@
             },
             "development": {
               "buildTarget": "frontend:build:development"
+            },
+            "remote": {
+              "buildTarget": "frontend:build:development",
+              "proxyConfig": "proxy.conf.remote.json"
             }
           },
           "defaultConfiguration": "development"

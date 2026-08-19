@@ -18,6 +18,7 @@ import { LocalDataService } from '../../core/services/local-data.service';
 import { MailboxService } from '../../core/services/mailbox.service';
 import { SyncService } from '../../core/services/sync.service';
 import { UsersService } from '../../core/services/users.service';
+import { MailboxSelectComponent } from '../../shared/mailbox-select/mailbox-select';
 import { AutomationDrawerComponent } from './automation-drawer/automation-drawer';
 
 interface FolderFilter {
@@ -28,7 +29,7 @@ interface FolderFilter {
 @Component({
   selector: 'app-inbox',
   standalone: true,
-  imports: [CommonModule, FormsModule, AutomationDrawerComponent],
+  imports: [CommonModule, FormsModule, AutomationDrawerComponent, MailboxSelectComponent],
   templateUrl: './inbox.html',
   styleUrl: './inbox.scss',
 })
@@ -42,7 +43,6 @@ export class InboxComponent implements OnInit {
 
   users: User[] = [];
   selectedEmail = '';
-  userFilter = '';
 
   folders: Folder[] = [];
   activeQuery = 'is:anywhere';
@@ -93,16 +93,6 @@ export class InboxComponent implements OnInit {
         this.selectedMessage = null;
       }
     });
-  }
-
-  get filteredUsers(): User[] {
-    const q = this.userFilter.trim().toLowerCase();
-    if (!q) return this.users;
-    return this.users.filter(
-      (u) =>
-        u.email.toLowerCase().includes(q) ||
-        (u.display_name ?? '').toLowerCase().includes(q),
-    );
   }
 
   get selectedUser(): User | undefined {

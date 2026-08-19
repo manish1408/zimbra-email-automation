@@ -1,0 +1,333 @@
+<div class="container py-4 classification-page">
+  <h1 class="h3 mb-2">Classification</h1>
+  <p class="text-muted mb-4">
+    Global spam filtering applies to every mailbox. Each inbox has its own categories and folders.
+  </p>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-lg-4 col-md-6">
+          <label class="form-label small mb-1">Rules for</label>
+          <app-mailbox-select
+            [users]="users"
+            [value]="selectedEmail"
+            [disabled]="loadingUsers"
+            placeholder="Search mailboxes…"
+            [extraOptions]="[{ value: globalValue, label: 'Global rules' }]"
+            (valueChange)="onUserSelect($event)"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  @if (error) {
+    <div class="alert alert-danger">{{ error }}</div>
+  }
+  @if (successMessage) {
+    <div class="alert alert-success">{{ successMessage }}</div>
+  }
+
+  @if (loading) {
+    <div class="text-muted">Loading classification rules…</div>
+  } @else if (isGlobal && globalRules) {
+    <div class="card shadow-sm training-box mb-4">
+      <div class="card-header fw-semibold">Spam filtering</div>
+      <div class="card-body">
+        <p class="small text-muted mb-3">
+          Shared spam folder, classification instructions, and spam categories applied to every automation run.
+        </p>
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">
+            <label class="form-label">Spam folder</label>
+            <input
+              class="form-control"
+              [(ngModel)]="globalRules.config.spam_folder"
+              [disabled]="saving"
+            />
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Shared classification instructions</label>
+          <textarea
+            class="form-control font-monospace"
+            rows="5"
+            [(ngModel)]="globalRules.config.classification_instructions"
+            [disabled]="saving"
+          ></textarea>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h2 class="h6 mb-0">Spam categories</h2>
+          <button type="button" class="btn btn-sm btn-outline-primary" (click)="addCategory()" [disabled]="saving">
+            Add category
+          </button>
+        </div>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Slug</th>
+                <th>Name</th>
+                <th>Hints</th>
+                <th>Enabled</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (category of globalRules.categories; track $index) {
+                <tr>
+                  <td>
+                    <input class="form-control form-control-sm" [(ngModel)]="category.slug" [disabled]="saving" />
+                  </td>
+                  <td>
+                    <input class="form-control form-control-sm" [(ngModel)]="category.display_name" [disabled]="saving" />
+                  </td>
+                  <td style="min-width: 220px">
+                    <textarea
+                      class="form-control form-control-sm"
+                      rows="2"
+                      [(ngModel)]="category.classification_hints"
+                      [disabled]="saving"
+                    ></textarea>
+                  </td>
+                  <td class="text-center">
+                    <input type="checkbox" class="form-check-input" [(ngModel)]="category.enabled" [disabled]="saving" />
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-danger"
+                      (click)="removeCategory($index)"
+                      [disabled]="saving"
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm training-box mb-4">
+      <div class="card-header fw-semibold">Employee routing</div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <p class="small text-muted mb-0">Used when a category routes by person name.</p>
+          <button type="button" class="btn btn-sm btn-outline-primary" (click)="addEmployee()" [disabled]="saving">
+            Add employee
+          </button>
+        </div>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Aliases (comma-separated)</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (employee of globalRules.employees; track $index) {
+                <tr>
+                  <td>
+                    <input class="form-control form-control-sm" [(ngModel)]="employee.name" [disabled]="saving" />
+                  </td>
+                  <td>
+                    <input class="form-control form-control-sm" [(ngModel)]="employee.email" [disabled]="saving" />
+                  </td>
+                  <td>
+                    <input
+                      class="form-control form-control-sm"
+                      [ngModel]="aliasesText(employee)"
+                      (ngModelChange)="setAliases(employee, $event)"
+                      [disabled]="saving"
+                    />
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-danger"
+                      (click)="removeEmployee($index)"
+                      [disabled]="saving"
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  } @else if (!isGlobal && mailboxRules) {
+    <div class="card shadow-sm training-box mb-4">
+      <div class="card-header fw-semibold">Inbox rules</div>
+      <div class="card-body">
+        <p class="small text-muted mb-3">
+          Categories and folders for <code>{{ selectedEmail }}</code>. Folders are created on this mailbox when mail is moved.
+        </p>
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">
+            <label class="form-label">Default forward email</label>
+            <input
+              class="form-control"
+              [(ngModel)]="mailboxRules.default_forward"
+              [disabled]="saving"
+              placeholder="optional"
+            />
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Extra classification instructions</label>
+          <textarea
+            class="form-control font-monospace"
+            rows="4"
+            [(ngModel)]="mailboxRules.extra_instructions"
+            [disabled]="saving"
+            placeholder="Optional instructions appended to the global prompt for this inbox only."
+          ></textarea>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h2 class="h6 mb-0">Categories</h2>
+          <div class="d-flex gap-2">
+            @if (mailboxRules.categories.length === 0) {
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                (click)="seedMailbox()"
+                [disabled]="saving || seeding"
+              >
+                {{ seeding ? 'Copying…' : 'Copy starter categories' }}
+              </button>
+            }
+            <button type="button" class="btn btn-sm btn-outline-primary" (click)="addCategory()" [disabled]="saving">
+              Add category
+            </button>
+          </div>
+        </div>
+
+        @if (mailboxRules.categories.length === 0) {
+          <p class="small text-muted mb-0">
+            This inbox has no categories yet. Copy the starter set or add your own.
+          </p>
+        } @else {
+          <div class="table-responsive mb-3">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Slug</th>
+                  <th>Name</th>
+                  <th>Hints</th>
+                  <th>Folder</th>
+                  <th>Forward to</th>
+                  <th class="text-center">Flags</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (category of mailboxRules.categories; track $index) {
+                  <tr>
+                    <td>
+                      <input class="form-control form-control-sm" [(ngModel)]="category.slug" [disabled]="saving" />
+                    </td>
+                    <td>
+                      <input
+                        class="form-control form-control-sm"
+                        [(ngModel)]="category.display_name"
+                        [disabled]="saving"
+                      />
+                    </td>
+                    <td style="min-width: 180px">
+                      <textarea
+                        class="form-control form-control-sm"
+                        rows="2"
+                        [(ngModel)]="category.classification_hints"
+                        [disabled]="saving"
+                      ></textarea>
+                    </td>
+                    <td>
+                      <input class="form-control form-control-sm" [(ngModel)]="category.folder" [disabled]="saving" />
+                    </td>
+                    <td>
+                      <input
+                        class="form-control form-control-sm"
+                        [(ngModel)]="category.forward_to"
+                        [disabled]="saving"
+                        placeholder="optional"
+                      />
+                    </td>
+                    <td class="text-center">
+                      <div class="d-flex flex-column gap-1 small text-start">
+                        <label class="form-check-label">
+                          <input
+                            type="checkbox"
+                            class="form-check-input me-1"
+                            [(ngModel)]="category.enabled"
+                            [disabled]="saving"
+                          />Enabled
+                        </label>
+                        <label class="form-check-label">
+                          <input
+                            type="checkbox"
+                            class="form-check-input me-1"
+                            [(ngModel)]="category.skip_forward"
+                            [disabled]="saving"
+                          />No forward
+                        </label>
+                        <label class="form-check-label">
+                          <input
+                            type="checkbox"
+                            class="form-check-input me-1"
+                            [(ngModel)]="category.route_by_person"
+                            [disabled]="saving"
+                          />Person route
+                        </label>
+                        <label class="form-check-label">
+                          <input
+                            type="checkbox"
+                            class="form-check-input me-1"
+                            [(ngModel)]="category.needs_live_agent"
+                            [disabled]="saving"
+                          />Live agent
+                        </label>
+                      </div>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-danger"
+                        (click)="removeCategory($index)"
+                        [disabled]="saving"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  @if (!loading && (globalRules || mailboxRules)) {
+    <div class="d-flex flex-wrap align-items-center gap-3 mb-4">
+      <button class="btn btn-primary" [disabled]="saving || !dirty" (click)="saveRules()">
+        {{ saving ? 'Saving…' : isGlobal ? 'Save global rules' : 'Save inbox rules' }}
+      </button>
+      @if (updatedAt) {
+        <span class="small text-muted">Last saved {{ updatedAt | date: 'medium' }}</span>
+      }
+    </div>
+  }
+</div>

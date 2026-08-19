@@ -1,0 +1,8 @@
+{
+  "/api": {
+    "target": "http://176.123.3.2",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "info"
+  }
+}

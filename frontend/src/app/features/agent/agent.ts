@@ -1,11 +1,8 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import {
-  AgentTraining,
-  ClassificationEmployee,
-  ClassificationRules,
-} from '../../core/models/email.models';
+import { RouterLink } from '@angular/router';
+import { AgentTraining } from '../../core/models/email.models';
 import { AgentService } from '../../core/services/agent.service';
 
 const MAX_TEXT_LENGTH = 8000;
@@ -13,7 +10,7 @@ const MAX_TEXT_LENGTH = 8000;
 @Component({
   selector: 'app-agent',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './agent.html',
   styleUrl: './agent.scss',
 })
@@ -31,18 +28,11 @@ export class AgentComponent implements OnInit {
   generalSaving = false;
   draftSaving = false;
 
-  rules: ClassificationRules | null = null;
-  savedRulesJson = '';
-  rulesUpdatedAt: string | null = null;
-  rulesLoading = false;
-  rulesSaving = false;
-
   error = '';
   successMessage = '';
 
   ngOnInit(): void {
     this.loadTraining();
-    this.loadRules();
   }
 
   get generalDirty(): boolean {
@@ -51,10 +41,6 @@ export class AgentComponent implements OnInit {
 
   get draftDirty(): boolean {
     return this.draftReplyRules !== this.savedDraftReplyRules;
-  }
-
-  get rulesDirty(): boolean {
-    return this.rules ? JSON.stringify(this.rules) !== this.savedRulesJson : false;
   }
 
   loadTraining(): void {
@@ -112,95 +98,6 @@ export class AgentComponent implements OnInit {
     });
   }
 
-  loadRules(): void {
-    this.rulesLoading = true;
-    this.agentService.getClassificationRules().subscribe({
-      next: (res) => this.applyRules(res),
-      error: (err) => {
-        this.error = err?.error?.detail ?? 'Failed to load classification rules';
-        this.rulesLoading = false;
-      },
-    });
-  }
-
-  saveRules(): void {
-    if (!this.rules || this.rules.categories.length === 0) {
-      this.error = 'At least one category is required.';
-      return;
-    }
-
-    const slugs = this.rules.categories.map((c) => c.slug.trim());
-    if (new Set(slugs).size !== slugs.length) {
-      this.error = 'Category slugs must be unique.';
-      return;
-    }
-
-    this.rulesSaving = true;
-    this.error = '';
-    this.successMessage = '';
-    this.agentService.saveClassificationRules(this.rules).subscribe({
-      next: (res) => {
-        this.applyRules(res);
-        this.rulesSaving = false;
-        this.successMessage = 'Classification rules saved.';
-      },
-      error: (err) => {
-        this.error = err?.error?.detail ?? 'Failed to save classification rules';
-        this.rulesSaving = false;
-      },
-    });
-  }
-
-  addCategory(): void {
-    if (!this.rules) return;
-    const nextOrder = (this.rules.categories.at(-1)?.sort_order ?? 0) + 10;
-    this.rules.categories = [
-      ...this.rules.categories,
-      {
-        slug: '',
-        display_name: '',
-        classification_hints: '',
-        folder: '',
-        forward_to: null,
-        needs_live_agent: false,
-        is_spam: false,
-        route_by_person: false,
-        skip_forward: false,
-        sort_order: nextOrder,
-        enabled: true,
-      },
-    ];
-  }
-
-  removeCategory(index: number): void {
-    if (!this.rules) return;
-    this.rules.categories = this.rules.categories.filter((_, i) => i !== index);
-  }
-
-  addEmployee(): void {
-    if (!this.rules) return;
-    this.rules.employees = [
-      ...this.rules.employees,
-      { name: '', email: '', aliases: [] },
-    ];
-  }
-
-  removeEmployee(index: number): void {
-    if (!this.rules) return;
-    this.rules.employees = this.rules.employees.filter((_, i) => i !== index);
-  }
-
-  aliasesText(employee: ClassificationEmployee): string {
-    return (employee.aliases ?? []).join(', ');
-  }
-
-  setAliases(employee: ClassificationEmployee, value: string): void {
-    employee.aliases = value
-      .split(',')
-      .map((part) => part.trim())
-      .filter(Boolean);
-  }
-
   private applyTraining(res: AgentTraining): void {
     this.generalRules = res.general_rules ?? '';
     this.savedGeneralRules = this.generalRules;
@@ -208,20 +105,5 @@ export class AgentComponent implements OnInit {
     this.savedDraftReplyRules = this.draftReplyRules;
     this.trainingUpdatedAt = res.updated_at;
     this.trainingLoading = false;
-  }
-
-  private applyRules(res: ClassificationRules): void {
-    this.rules = {
-      ...res,
-      config: { ...res.config },
-      categories: res.categories.map((c) => ({ ...c })),
-      employees: res.employees.map((e) => ({
-        ...e,
-        aliases: [...(e.aliases ?? [])],
-      })),
-    };
-    this.savedRulesJson = JSON.stringify(this.rules);
-    this.rulesUpdatedAt = res.updated_at;
-    this.rulesLoading = false;
   }
 }

@@ -11,6 +11,12 @@ npm start
 
 Runs at [http://localhost:4200](http://localhost:4200) with API proxy to `http://localhost:8000`.
 
+To use the production API at [http://176.123.3.2](http://176.123.3.2/) instead of a local backend:
+
+```bash
+npm run start:remote
+```
+
 ## Production build
 
 ```bash

@@ -175,6 +175,20 @@ class ClassificationRulesUpdateRequest(BaseModel):
     employees: list[ClassificationEmployeeSchema] = Field(default_factory=list)
 
 
+class MailboxClassificationRulesResponse(BaseModel):
+    account: str
+    extra_instructions: str = ""
+    default_forward: str | None = None
+    categories: list[ClassificationCategorySchema] = Field(default_factory=list)
+    updated_at: str | None = None
+
+
+class MailboxClassificationRulesUpdateRequest(BaseModel):
+    extra_instructions: str = ""
+    default_forward: str | None = None
+    categories: list[ClassificationCategorySchema] = Field(default_factory=list)
+
+
 class MessageMetadata(BaseModel):
     zimbra_id: str
     account: str

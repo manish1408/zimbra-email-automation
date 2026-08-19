@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from app.api.deps import get_email_repository
 from app.db.email_repository import EmailRepository
@@ -8,12 +8,6 @@ from app.models.schemas import (
     AgentTrainingDraftReplyUpdateRequest,
     AgentTrainingGeneralUpdateRequest,
     AgentTrainingResponse,
-    ClassificationRulesResponse,
-    ClassificationRulesUpdateRequest,
-)
-from app.services.classification_rules import (
-    ClassificationRules,
-    save_classification_rules,
 )
 
 router = APIRouter(prefix="/agent", tags=["Agent"])
@@ -55,41 +49,3 @@ async def save_draft_reply_rules(
 ) -> AgentTrainingResponse:
     row = await repository.upsert_agent_draft_reply_rules(body.draft_reply_rules.strip())
     return AgentTrainingResponse(**row)
-
-
-@router.get(
-    "/classification-rules",
-    response_model=ClassificationRulesResponse,
-    summary="Get classification and routing rules",
-    description=(
-        "Return category definitions, folder moves, forwarding targets, spam handling, "
-        "and employee routing used by all automation runs."
-    ),
-)
-async def get_classification_rules(
-    repository: EmailRepository = Depends(get_email_repository),
-) -> ClassificationRulesResponse:
-    row = await repository.get_classification_rules()
-    return ClassificationRulesResponse(**row)
-
-
-@router.put(
-    "/classification-rules",
-    response_model=ClassificationRulesResponse,
-    summary="Save classification and routing rules",
-    description="Replace classification and routing rules applied to all automation runs.",
-)
-async def save_classification_rules_endpoint(
-    body: ClassificationRulesUpdateRequest,
-    repository: EmailRepository = Depends(get_email_repository),
-) -> ClassificationRulesResponse:
-    if not body.categories:
-        raise HTTPException(status_code=400, detail="At least one category is required")
-
-    slugs = [c.slug.strip() for c in body.categories]
-    if len(slugs) != len(set(slugs)):
-        raise HTTPException(status_code=400, detail="Category slugs must be unique")
-
-    rules = ClassificationRules.from_api_dict(body.model_dump())
-    saved = await save_classification_rules(repository, rules)
-    return ClassificationRulesResponse(**saved.to_api_dict())
