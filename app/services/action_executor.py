@@ -60,19 +60,9 @@ class ActionExecutor:
         *,
         classification: MessageClassification | None = None,
     ) -> str | None:
-        if not route_target:
-            return None
-        if classification and classification.get("is_spam"):
-            return None
-        if classification and not self.resolver.should_forward(classification):
-            return None
-        dry_run = self.settings.automation_dry_run
-        if dry_run:
-            logger.info("[DRY RUN] forward %s → %s", msg_id, route_target)
-            return route_target
-        await self.email_service.forward_message(account, msg_id, route_target)
-        logger.info("Forwarded message %s to %s", msg_id, route_target)
-        return route_target
+        # Forwarding is disabled — never send routed copies.
+        logger.info("Skipping forward for %s (routing disabled)", msg_id)
+        return None
 
     async def apply_response_draft(
         self,

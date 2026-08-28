@@ -107,7 +107,7 @@ async def test_apply_response_draft_skips_move_when_save_draft_has_no_id():
 
 
 @pytest.mark.asyncio
-async def test_apply_forward_respects_needs_forwarding_false():
+async def test_apply_forward_is_disabled():
     settings = Settings(
         zimbra_host="x",
         zimbra_admin_user="a",
@@ -117,7 +117,7 @@ async def test_apply_forward_respects_needs_forwarding_false():
     email_service = AsyncMock()
     repository = MagicMock()
     resolver = MagicMock()
-    resolver.should_forward.return_value = False
+    resolver.should_forward.return_value = True
     executor = ActionExecutor(settings, email_service, repository, resolver)
 
     classification = MessageClassification(
@@ -129,7 +129,7 @@ async def test_apply_forward_respects_needs_forwarding_false():
         needs_live_agent=False,
         reasoning="",
         route_target="orders@gkhair.com",
-        needs_forwarding=False,
+        needs_forwarding=True,
     )
     result = await executor.apply_forward(
         "user@example.com",

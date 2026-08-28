@@ -28,30 +28,8 @@ class RoutingResolver:
         classification: MessageClassification,
         account: str,
     ) -> str | None:
-        if classification.get("is_spam"):
-            return None
-
-        category_slug = classification["category"]
-        rule = self.resolve_category_rule(category_slug)
-        if not rule:
-            return self.rules.config.default_forward
-
-        if rule.skip_forward:
-            return None
-
-        if rule.route_by_person:
-            person = (classification.get("requested_person") or "").strip()
-            if person:
-                email = self._lookup_employee(person)
-                if email:
-                    return email
-                if self.email_service:
-                    gal = await self.email_service.autocomplete_person(account, person)
-                    if gal:
-                        return gal[0]
-            return self.rules.config.default_forward
-
-        return rule.forward_to or self.rules.config.default_forward
+        # Email forwarding/routing is disabled for all categories.
+        return None
 
     def folder_for_classification(self, classification: MessageClassification) -> str | None:
         if classification.get("is_spam"):
@@ -75,16 +53,8 @@ class RoutingResolver:
         return rule.needs_live_agent if rule else False
 
     def should_forward(self, classification: MessageClassification) -> bool:
-        if classification.get("is_spam"):
-            return False
-        if str(classification.get("category") or "") == "careers":
-            return True
-        if "needs_forwarding" in classification:
-            return bool(classification.get("needs_forwarding"))
-        rule = self.resolve_category_rule(classification.get("category", ""))
-        if rule and rule.skip_forward:
-            return False
-        return not classification.get("is_spam")
+        # Email forwarding/routing is disabled.
+        return False
 
     def _lookup_employee(self, name: str) -> str | None:
         return self.rules.employee_index().get(name.strip().lower())

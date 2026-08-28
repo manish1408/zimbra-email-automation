@@ -1,5 +1,5 @@
 spam_folder: Junk
-default_forward: info@gkhair.com
+default_forward: null
 
 ack_template: |
   Thank you for contacting GK Hair.
@@ -13,42 +13,52 @@ categories:
   spam:
     folder: Junk
     forward_to: null
+    skip_forward: true
     send_ack: false
   marketing:
     folder: Marketing
     forward_to: null
+    skip_forward: true
     send_ack: false
   logistics:
     folder: Logistics
-    forward_to: sc@gkhair.com
+    forward_to: null
+    skip_forward: true
     send_ack: true
   billing:
     folder: Billing
-    forward_to: billing@gkhair.com
+    forward_to: null
+    skip_forward: true
     send_ack: true
   careers:
     folder: Human Resources
-    forward_to: hr@gkhair.com
+    forward_to: null
+    skip_forward: true
     send_ack: true
   orders:
     folder: Orders
-    forward_to: orders@gkhair.com
+    forward_to: null
+    skip_forward: true
     send_ack: true
   person_request:
     folder: Person Requests
     forward_to: null
+    skip_forward: true
     send_ack: true
   customer_support:
     folder: Customer Support
-    forward_to: info@gkhair.com
+    forward_to: null
+    skip_forward: true
     send_ack: true
     needs_live_agent: true
   enquiry:
     folder: Enquiries
-    forward_to: info@gkhair.com
+    forward_to: null
+    skip_forward: true
     send_ack: true
     needs_live_agent: true
   general:
     folder: General
-    forward_to: info@gkhair.com
+    forward_to: null
+    skip_forward: true
     send_ack: true
