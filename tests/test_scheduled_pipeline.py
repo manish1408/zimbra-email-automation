@@ -6,8 +6,12 @@ import pytest
 
 from app.config import Settings
 from app.models.schemas import User, UserListResponse
-from app.services.scheduled_pipeline import ScheduledPipeline, _is_active_mailbox
-
+from app.services.scheduled_pipeline import (
+    ScheduledPipeline,
+    _is_active_mailbox,
+    build_poll_queries,
+    build_poll_query,
+)
 
 def _settings(**overrides) -> Settings:
     base = {
@@ -37,6 +41,22 @@ def _settings(**overrides) -> Settings:
 def test_is_active_mailbox(status, expected):
     user = User(id="1", email="user@example.com", status=status)
     assert _is_active_mailbox(user) is expected
+
+
+def test_build_poll_queries_includes_junk_by_default():
+    settings = _settings()
+    assert build_poll_queries(settings) == ["in:inbox is:unread", "in:junk is:unread"]
+    assert build_poll_query(settings, None) == "in:inbox is:unread"
+
+
+def test_build_poll_queries_can_disable_junk():
+    settings = _settings(sync_include_junk=False)
+    assert build_poll_queries(settings) == ["in:inbox is:unread"]
+
+
+def test_build_poll_queries_skips_duplicate_junk_in_inbox_query():
+    settings = _settings(sync_inbox_query="(in:inbox OR in:junk)")
+    assert build_poll_queries(settings) == ["(in:inbox OR in:junk) is:unread"]
 
 
 @pytest.mark.asyncio

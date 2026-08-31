@@ -31,17 +31,34 @@ def _zimbra_after_date(iso_date: str, overlap_minutes: int) -> str:
     return f"{dt.month}/{dt.day}/{dt.year}"
 
 
+def build_poll_queries(
+    settings: Settings,
+    last_seen_date: str | None = None,
+) -> list[str]:
+    """Build poll queries for inbox (and optionally Junk).
+
+    Avoid sort: — many Zimbra builds return HTTP 500 for sort:desc.
+    Date-only after:M/D/Y misses same-day mail on many Zimbra builds, so we
+    poll unread mail per folder instead. Each folder is queried separately so
+    AGENT_INBOX_LIMIT applies per folder (Junk is not starved by Inbox unread).
+    """
+    del last_seen_date  # retained for call-site compatibility; unused on purpose
+    bases = [settings.sync_inbox_query]
+    junk = (settings.sync_junk_query or "").strip()
+    if settings.sync_include_junk and junk:
+        inbox = (settings.sync_inbox_query or "").strip().lower()
+        if junk.lower() not in inbox and "in:junk" not in inbox and "in:spam" not in inbox:
+            bases.append(junk)
+    return [f"{base} is:unread" for base in bases if base.strip()]
+
+
 def build_poll_query(
     settings: Settings,
     last_seen_date: str | None,
 ) -> str:
-    """Build inbox poll query. Avoid sort: — many Zimbra builds return HTTP 500 for sort:desc."""
-    base = settings.sync_inbox_query
-    # Date-only after:M/D/Y misses same-day inbox mail on many Zimbra builds (returns 0
-    # results while in:inbox still has messages). Poll unread inbox instead.
-    if not last_seen_date:
-        return f"{base} is:unread"
-    return f"{base} is:unread"
+    """Build a single poll query (first folder). Prefer build_poll_queries()."""
+    queries = build_poll_queries(settings, last_seen_date)
+    return queries[0] if queries else "in:inbox is:unread"
 
 
 def _is_active_mailbox(user: User) -> bool:
@@ -266,43 +283,53 @@ class ScheduledPipeline:
     ) -> dict[str, Any]:
         state = await self.repository.get_mailbox_state(conn, account)
         last_seen = state.get("last_seen_date") if state else None
-        query = build_poll_query(self.settings, last_seen)
+        queries = build_poll_queries(self.settings, last_seen)
         limit = self.settings.agent_inbox_limit
 
-        logger.info("Polling mailbox %s (query=%s)", account, query)
-
         token = await self.email_service.admin.delegate_auth(account)
-        messages, _, _ = await self.email_service.mail.search_messages(
-            auth_token=token,
-            account_name=account,
-            query=query,
-            limit=limit,
-        )
 
         inserted = 0
         updated = 0
+        fetched = 0
         newest_date: str | None = last_seen
+        seen_ids: set[str] = set()
 
-        for zm in messages:
-            summary = self.email_service._to_summary(zm)
-            detail = MessageDetail(**summary.model_dump())
-            detail.body = zm.body
+        for query in queries:
+            logger.info("Polling mailbox %s (query=%s)", account, query)
+            messages, _, _ = await self.email_service.mail.search_messages(
+                auth_token=token,
+                account_name=account,
+                query=query,
+                limit=limit,
+            )
 
-            if self.settings.sync_fetch_bodies and not detail.body:
-                try:
-                    full = await self.email_service.get_message(account, zm.id)
-                    detail.body = full.body
-                except Exception as exc:
-                    logger.warning("Failed to fetch body for message %s: %s", zm.id, exc)
+            for zm in messages:
+                if zm.id in seen_ids:
+                    continue
+                seen_ids.add(zm.id)
+                fetched += 1
 
-            is_new = await self.repository.upsert_message(conn, detail)
-            if is_new:
-                inserted += 1
-            else:
-                updated += 1
+                summary = self.email_service._to_summary(zm)
+                detail = MessageDetail(**summary.model_dump())
+                detail.body = zm.body
 
-            if zm.date and (not newest_date or zm.date > newest_date):
-                newest_date = zm.date
+                if self.settings.sync_fetch_bodies and not detail.body:
+                    try:
+                        full = await self.email_service.get_message(account, zm.id)
+                        detail.body = full.body
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to fetch body for message %s: %s", zm.id, exc
+                        )
+
+                is_new = await self.repository.upsert_message(conn, detail)
+                if is_new:
+                    inserted += 1
+                else:
+                    updated += 1
+
+                if zm.date and (not newest_date or zm.date > newest_date):
+                    newest_date = zm.date
 
         await self.repository.upsert_mailbox_state(
             conn,
@@ -315,8 +342,9 @@ class ScheduledPipeline:
         unanalyzed = await self.repository.count_unanalyzed(conn, account)
 
         stats = {
-            "query": query,
-            "fetched": len(messages),
+            "queries": queries,
+            "query": " | ".join(queries),
+            "fetched": fetched,
             "inserted": inserted,
             "updated": updated,
             "total_in_db": total,

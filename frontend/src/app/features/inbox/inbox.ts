@@ -74,6 +74,7 @@ export class InboxComponent implements OnInit {
   readonly folderFilters: FolderFilter[] = [
     { label: 'All mail', query: 'is:anywhere' },
     { label: 'Inbox', query: 'in:inbox' },
+    { label: 'Junk / Spam', query: 'in:junk' },
     { label: 'Sent', query: 'in:sent' },
     { label: 'Drafts', query: 'in:drafts' },
     { label: 'Trash', query: 'in:trash' },
@@ -135,8 +136,7 @@ export class InboxComponent implements OnInit {
   }
 
   selectZimbraFolder(folder: Folder): void {
-    const name = (folder.path || folder.name).toLowerCase();
-    this.activeQuery = `in:${name}`;
+    this.activeQuery = this.folderSearchQuery(folder);
     this.activeFolderLabel = folder.name;
     this.resetList();
     this.loadMessages();
@@ -411,6 +411,18 @@ export class InboxComponent implements OnInit {
           }
         });
     }
+  }
+
+  private folderSearchQuery(folder: Folder): string {
+    // Zimbra `in:` expects a folder name (e.g. in:junk), not an abs path (/Junk).
+    const name = (folder.name || '').trim();
+    if (name && name.toLowerCase() !== 'user_root') {
+      return /\s/.test(name) ? `in:"${name}"` : `in:${name.toLowerCase()}`;
+    }
+    const path = (folder.path || '').trim().replace(/^\/+/, '');
+    const segment = path.split('/').filter(Boolean).pop() || path;
+    if (!segment) return 'is:anywhere';
+    return /\s/.test(segment) ? `in:"${segment}"` : `in:${segment.toLowerCase()}`;
   }
 
   private resetList(): void {

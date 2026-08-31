@@ -48,12 +48,17 @@ class Settings(BaseSettings):
     sync_fetch_bodies: bool = True
     sync_poll_interval_seconds: int = 60
     sync_inbox_query: str = "in:inbox"
+    # Also poll Junk/Spam so client-marked spam is visible locally and to automation.
+    sync_include_junk: bool = True
+    sync_junk_query: str = "in:junk"
     sync_overlap_minutes: int = 5
 
     # Automation actions
     automation_dry_run: bool = True
     automation_move_to_folders: bool = True
     automation_auto_replies_folder: str = "Auto Replies"
+    # Minimum LLM confidence required to mark sales/marketing mail as spam / move to Junk
+    spam_confidence_threshold: float = 0.75
 
     # Shopify Bot API (order / invoice lookups)
     shopify_bot_base_url: str = "https://bot.gkhair.com"

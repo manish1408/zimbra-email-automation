@@ -110,7 +110,10 @@ class ClassificationService:
         classification_rules: ClassificationRules,
         agent_training: str | None = None,
     ) -> list[MessageClassification]:
-        resolver = RoutingResolver(rules=classification_rules)
+        resolver = RoutingResolver(
+            rules=classification_rules,
+            spam_confidence_threshold=self.settings.spam_confidence_threshold,
+        )
         rules_prompt = classification_rules.build_classification_prompt()
         blocks: list[str] = []
         for message in messages:
@@ -127,7 +130,11 @@ class ClassificationService:
             )
 
         prompt = (
-            "Classify each email below. Return one analysis per message id.\n"
+            "Classify each email below. Return one analysis per message id "
+            "(use the exact Zimbra message id from each ### Message id=… header).\n"
+            "Judge sales/marketing spam from sender + subject + body. "
+            "If it is selling, promoting, or marketing with sufficient confidence, "
+            "set is_spam=true and category=spam.\n"
             "Set is_invoice_question / is_order_status_question when the customer asks "
             "about invoices or order status. Set needs_response_generation when a "
             "reply draft should be written. Set needs_forwarding when the email should "
@@ -138,7 +145,10 @@ class ClassificationService:
 
         system_prompt = augment_system_prompt(
             (
-                "You are an email classifier. Use exact category slug values. "
+                "You are an email classifier for GK Hair inboxes. "
+                "Use exact category slug values and the exact message id provided. "
+                "Treat unsolicited sales pitches, product/service promotion, and "
+                "marketing emails as spam (is_spam=true, category=spam) when confident. "
                 "Return compact JSON only."
             ),
             agent_training,

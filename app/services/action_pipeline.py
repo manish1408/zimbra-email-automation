@@ -77,7 +77,11 @@ async def run_action_pipeline(
         if resolver is None:
             if not rules:
                 raise ValueError("Classification rules are required to run the pipeline")
-            resolver = RoutingResolver(email_service=email_service, rules=rules)
+            resolver = RoutingResolver(
+                email_service=email_service,
+                rules=rules,
+                spam_confidence_threshold=settings.spam_confidence_threshold,
+            )
 
         ctx = ActionNodeContext(
             email_service=email_service,

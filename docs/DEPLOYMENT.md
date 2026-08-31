@@ -305,6 +305,10 @@ Production config lives in `/opt/zimbra-email-automation/.env`. Key settings:
 | `SYNC_MAILBOXES` | Optional comma-separated allowlist. When set, only these active mailboxes are polled |
 | `SYNC_TARGET_EMAIL` | Mailbox to poll when `SYNC_POLL_ALL_MAILBOXES=false` (debugging / legacy single-mailbox mode) |
 | `SYNC_POLL_INTERVAL_SECONDS` | Poll interval (default 60) |
+| `SYNC_INBOX_QUERY` | Inbox poll query (default `in:inbox`) |
+| `SYNC_INCLUDE_JUNK` | `true` (default) = also poll Junk/Spam for client-marked spam |
+| `SYNC_JUNK_QUERY` | Junk poll query (default `in:junk`; Zimbra’s system spam folder) |
+| `SPAM_CONFIDENCE_THRESHOLD` | Min LLM confidence (default `0.75`) to mark sales/marketing mail as spam and move to Junk |
 | `AUTOMATION_DRY_RUN` | `false` = live Zimbra moves/forwards |
 | `LLM_PROVIDER` / `VASTAI_*` | LLM agent configuration |
 

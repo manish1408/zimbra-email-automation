@@ -78,11 +78,15 @@ class ClassificationRules:
         return index
 
     def build_classification_prompt(self) -> str:
+        from app.services.spam_policy import SALES_MARKETING_SPAM_POLICY
+
         lines = [
             "Classify each email using exactly one category slug from the list below.",
             "Return: category, is_spam, confidence, requested_person, needs_live_agent, "
             "is_invoice_question, is_order_status_question, needs_response_generation, "
             "needs_forwarding, reasoning.",
+            "",
+            SALES_MARKETING_SPAM_POLICY,
             "",
         ]
         instructions = (self.config.classification_instructions or "").strip()

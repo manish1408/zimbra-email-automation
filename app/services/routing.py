@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.agents.state import MessageClassification
 from app.services.classification_rules import CategoryRule, ClassificationRules
 from app.services.email_sync import EmailSyncService
+from app.services.spam_policy import apply_spam_confidence_policy
 
 
 class RoutingResolver:
@@ -14,11 +15,13 @@ class RoutingResolver:
         self,
         email_service: EmailSyncService | None = None,
         rules: ClassificationRules | None = None,
+        spam_confidence_threshold: float = 0.75,
     ):
         if not rules:
             raise ValueError("Classification rules are required")
         self.email_service = email_service
         self.rules = rules
+        self.spam_confidence_threshold = spam_confidence_threshold
 
     def resolve_category_rule(self, category_slug: str) -> CategoryRule | None:
         return self.rules.get_category(category_slug)
@@ -84,4 +87,15 @@ class RoutingResolver:
                 rule = fallback
         if rule and rule.is_spam:
             copy["is_spam"] = True
+
+        # Sales/marketing spam: enforce confidence gate and remap marketing → spam.
+        spam_slug = "spam"
+        spam_rule = self.rules.get_category("spam")
+        if spam_rule:
+            spam_slug = spam_rule.slug
+        copy = apply_spam_confidence_policy(
+            copy,
+            threshold=self.spam_confidence_threshold,
+            spam_slug=spam_slug,
+        )
         return MessageClassification(**copy)
