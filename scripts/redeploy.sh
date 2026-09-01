@@ -75,12 +75,23 @@ build_frontend() {
   (cd "$PROJECT_ROOT/frontend" && npm run build)
 }
 
+restart_mail_pollers() {
+  ssh_cmd "bash -s" <<'EOF'
+if systemctl list-unit-files 'zimbra-mail-poller@*.service' --no-legend 2>/dev/null | grep -q .; then
+  systemctl restart 'zimbra-mail-poller@*' 2>/dev/null || true
+else
+  systemctl restart zimbra-mail-poller 2>/dev/null || true
+fi
+EOF
+}
+
 restart_services() {
   echo "Restarting services..."
   if [[ "$MODE" == "frontend" ]]; then
     ssh_cmd "systemctl reload nginx"
   else
-    ssh_cmd "systemctl restart zimbra-api zimbra-mail-poller nginx"
+    ssh_cmd "systemctl restart zimbra-api nginx"
+    restart_mail_pollers
   fi
 }
 
@@ -101,7 +112,8 @@ case "$MODE" in
     ;;
   backend)
     sync_backend
-    ssh_cmd "systemctl restart zimbra-api zimbra-mail-poller"
+    ssh_cmd "systemctl restart zimbra-api"
+    restart_mail_pollers
     verify
     ;;
   frontend)

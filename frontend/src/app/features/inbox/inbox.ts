@@ -146,9 +146,16 @@ export class InboxComponent implements OnInit {
     const q = this.searchQuery.trim();
     if (!q) return;
     this.activeQuery = q;
-    this.activeFolderLabel = `Search: ${q}`;
+    this.activeFolderLabel = this.messageIdQuery(q)
+      ? `Message ID: ${q}`
+      : `Search: ${q}`;
     this.resetList();
     this.loadMessages();
+  }
+
+  private messageIdQuery(query: string): string | undefined {
+    const trimmed = query.trim();
+    return /^-?\d+$/.test(trimmed) ? trimmed : undefined;
   }
 
   loadMailboxData(): void {
@@ -186,8 +193,9 @@ export class InboxComponent implements OnInit {
         .searchMessages(this.selectedEmail, this.activeQuery, this.limit, this.offset)
         .subscribe({ next: onSuccess, error: onError });
     } else {
+      const messageId = this.messageIdQuery(this.activeQuery);
       this.localDataService
-        .listMessages(this.selectedEmail, this.limit, this.offset)
+        .listMessages(this.selectedEmail, this.limit, this.offset, undefined, messageId)
         .subscribe({ next: onSuccess, error: onError });
     }
   }

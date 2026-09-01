@@ -31,6 +31,16 @@ def _zimbra_after_date(iso_date: str, overlap_minutes: int) -> str:
     return f"{dt.month}/{dt.day}/{dt.year}"
 
 
+def _poll_folder_bases(settings: Settings) -> list[str]:
+    bases = [settings.sync_inbox_query]
+    junk = (settings.sync_junk_query or "").strip()
+    if settings.sync_include_junk and junk:
+        inbox = (settings.sync_inbox_query or "").strip().lower()
+        if junk.lower() not in inbox and "in:junk" not in inbox and "in:spam" not in inbox:
+            bases.append(junk)
+    return [base for base in bases if base.strip()]
+
+
 def build_poll_queries(
     settings: Settings,
     last_seen_date: str | None = None,
@@ -43,13 +53,26 @@ def build_poll_queries(
     AGENT_INBOX_LIMIT applies per folder (Junk is not starved by Inbox unread).
     """
     del last_seen_date  # retained for call-site compatibility; unused on purpose
-    bases = [settings.sync_inbox_query]
-    junk = (settings.sync_junk_query or "").strip()
-    if settings.sync_include_junk and junk:
-        inbox = (settings.sync_inbox_query or "").strip().lower()
-        if junk.lower() not in inbox and "in:junk" not in inbox and "in:spam" not in inbox:
-            bases.append(junk)
-    return [f"{base} is:unread" for base in bases if base.strip()]
+    return [f"{base} is:unread" for base in _poll_folder_bases(settings)]
+
+
+def build_poll_query_specs(settings: Settings) -> list[tuple[str, int]]:
+    """Return (query, limit) pairs with recent-window unread queries first."""
+    bases = _poll_folder_bases(settings)
+    fetch_limit = max(1, settings.sync_poll_fetch_limit)
+    specs: list[tuple[str, int]] = []
+    recent_after = _zimbra_after_date(
+        (datetime.now(UTC) - timedelta(hours=settings.sync_recent_hours)).isoformat(),
+        settings.sync_overlap_minutes,
+    )
+    if recent_after:
+        for base in bases:
+            specs.append((f"{base} is:unread after:{recent_after}", fetch_limit))
+    for base in bases:
+        query = f"{base} is:unread"
+        if not any(existing == query for existing, _ in specs):
+            specs.append((query, fetch_limit))
+    return specs
 
 
 def build_poll_query(
@@ -283,8 +306,8 @@ class ScheduledPipeline:
     ) -> dict[str, Any]:
         state = await self.repository.get_mailbox_state(conn, account)
         last_seen = state.get("last_seen_date") if state else None
-        queries = build_poll_queries(self.settings, last_seen)
-        limit = self.settings.agent_inbox_limit
+        query_specs = build_poll_query_specs(self.settings)
+        queries = [query for query, _ in query_specs]
 
         token = await self.email_service.admin.delegate_auth(account)
 
@@ -294,13 +317,18 @@ class ScheduledPipeline:
         newest_date: str | None = last_seen
         seen_ids: set[str] = set()
 
-        for query in queries:
-            logger.info("Polling mailbox %s (query=%s)", account, query)
+        for query, fetch_limit in query_specs:
+            logger.info(
+                "Polling mailbox %s (query=%s, limit=%d)",
+                account,
+                query,
+                fetch_limit,
+            )
             messages, _, _ = await self.email_service.mail.search_messages(
                 auth_token=token,
                 account_name=account,
                 query=query,
-                limit=limit,
+                limit=fetch_limit,
             )
 
             for zm in messages:
@@ -359,7 +387,19 @@ class ScheduledPipeline:
         account: str,
     ) -> dict[str, Any]:
         limit = self.settings.agent_inbox_limit
-        unanalyzed = await self.repository.get_unanalyzed_messages(conn, account, limit=limit)
+        recent_since = (
+            datetime.now(UTC) - timedelta(hours=self.settings.sync_recent_hours)
+        ).isoformat()
+        unanalyzed = await self.repository.get_unanalyzed_messages(
+            conn,
+            account,
+            limit=limit,
+            since=recent_since,
+        )
+        if not unanalyzed:
+            unanalyzed = await self.repository.get_unanalyzed_messages(
+                conn, account, limit=limit
+            )
 
         if not unanalyzed:
             logger.info("No unanalyzed messages for %s", account)
@@ -373,6 +413,7 @@ class ScheduledPipeline:
             "limit": limit,
             "use_local_db": True,
             "automation_thread_id": thread_id,
+            "unanalyzed_since": recent_since,
         }
         result = await run_action_pipeline(
             initial_state,

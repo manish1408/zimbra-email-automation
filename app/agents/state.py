@@ -45,6 +45,7 @@ class PipelineState(TypedDict, total=False):
     message_ids: list[str] | None
     force_reprocess: bool
     automation_thread_id: str | None
+    unanalyzed_since: str | None
     agent_training: str | None
     draft_reply_rules: str | None
     classification_rules: Any

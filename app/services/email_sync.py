@@ -17,7 +17,12 @@ from app.models.schemas import (
     UserListResponse,
 )
 from app.services.zimbra.admin_client import ZimbraAdminClient
-from app.services.zimbra.mail_client import ZimbraMailClient, ZimbraMessage
+from app.services.zimbra.mail_client import (
+    ZimbraMailClient,
+    ZimbraMessage,
+    parse_zimbra_message_id,
+    zimbra_message_id_variants,
+)
 from app.services.email_thread import normalize_subject
 
 logger = logging.getLogger(__name__)
@@ -289,6 +294,29 @@ class EmailSyncService:
     ):
         user = User(id="", email=user_email)
         token = await self.admin.delegate_auth(user_email)
+
+        message_id = parse_zimbra_message_id(query)
+        if message_id and offset == 0:
+            for candidate in zimbra_message_id_variants(message_id):
+                try:
+                    message = await self.mail.get_message(
+                        auth_token=token,
+                        account_name=user_email,
+                        message_id=candidate,
+                    )
+                except RuntimeError:
+                    continue
+                payload = {
+                    "user": user,
+                    "query": query,
+                    "total": 1,
+                    "limit": limit,
+                    "offset": 0,
+                    "has_more": False,
+                    "messages": [self._to_summary(message)],
+                }
+                return response_class(**payload)
+
         messages, has_more, total = await self.mail.search_messages(
             auth_token=token,
             account_name=user_email,

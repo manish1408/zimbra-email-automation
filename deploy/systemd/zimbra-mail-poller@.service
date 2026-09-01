@@ -1,0 +1,19 @@
+[Unit]
+Description=Zimbra Mail Poller (%i)
+After=zimbra-api.service docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/zimbra-email-automation
+EnvironmentFile=/opt/zimbra-email-automation/.env
+EnvironmentFile=-/opt/zimbra-email-automation/config/pollers/%i.env
+ExecStart=/opt/zimbra-email-automation/.venv/bin/python scripts/mail_poller.py \
+  --account ${MAILBOX} \
+  --single-batch \
+  --interval ${SYNC_POLL_INTERVAL_SECONDS}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

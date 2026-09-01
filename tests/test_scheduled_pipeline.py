@@ -10,6 +10,7 @@ from app.services.scheduled_pipeline import (
     ScheduledPipeline,
     _is_active_mailbox,
     build_poll_queries,
+    build_poll_query_specs,
     build_poll_query,
 )
 
@@ -57,6 +58,16 @@ def test_build_poll_queries_can_disable_junk():
 def test_build_poll_queries_skips_duplicate_junk_in_inbox_query():
     settings = _settings(sync_inbox_query="(in:inbox OR in:junk)")
     assert build_poll_queries(settings) == ["(in:inbox OR in:junk) is:unread"]
+
+
+def test_build_poll_query_specs_prioritizes_recent_unread():
+    settings = _settings(sync_recent_hours=24, sync_poll_fetch_limit=100)
+    specs = build_poll_query_specs(settings)
+    assert len(specs) >= 2
+    assert all(limit == 100 for _, limit in specs)
+    assert specs[0][0].startswith("in:inbox is:unread after:")
+    assert any(query == "in:inbox is:unread" for query, _ in specs)
+    assert any(query.startswith("in:junk is:unread after:") for query, _ in specs)
 
 
 @pytest.mark.asyncio

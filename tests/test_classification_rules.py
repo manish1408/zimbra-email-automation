@@ -8,6 +8,7 @@ from app.services.classification_rules import (
     CategoryRule,
     ClassificationConfig,
     ClassificationRules,
+    _compact_prompt_text,
     load_classification_rules,
     mailbox_payload_to_rules,
     merge_classification_rules,
@@ -60,6 +61,32 @@ def _global_payload(**overrides) -> dict:
     }
     data.update(overrides)
     return data
+
+
+def test_compact_prompt_text_dedupes_and_truncates():
+    repeated = "\n".join(["same line"] * 50 + ["unique tail"])
+    compact = _compact_prompt_text(repeated, max_chars=40)
+    assert compact.startswith("same line")
+    assert "unique tail" in compact
+    assert len(compact) <= 40
+
+
+def test_build_classification_prompt_stays_compact_with_large_hints():
+    global_rules = ClassificationRules.from_api_dict(_global_payload())
+    mailbox_rules = mailbox_payload_to_rules(
+        {
+            "categories": [
+                _category(
+                    slug="careers",
+                    classification_hints="Job applications.\n" * 5000,
+                )
+            ]
+        }
+    )
+    merged = merge_classification_rules(global_rules, mailbox_rules)
+    prompt = merged.build_classification_prompt()
+    assert len(prompt) < 15000
+    assert "**careers**" in prompt
 
 
 def test_merge_combines_global_spam_with_inbox_categories():

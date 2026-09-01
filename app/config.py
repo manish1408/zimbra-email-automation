@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     vastai_cookie_name: str = ""
     vastai_timeout_seconds: float = 300.0
 
+    # Max concurrent LLM calls across all poller/API processes (Postgres semaphore).
+    llm_global_concurrency: int = 3
+    llm_concurrency_wait_seconds: float = 600.0
+
+    # asyncpg pool sizing (keep low when running many poller processes).
+    db_pool_min_size: int = 1
+    db_pool_max_size: int = 2
+
     agent_inbox_limit: int = 10
 
     # Scheduled sync + AI analysis
@@ -52,6 +60,10 @@ class Settings(BaseSettings):
     sync_include_junk: bool = True
     sync_junk_query: str = "in:junk"
     sync_overlap_minutes: int = 5
+    # How many unread messages to fetch per folder on each poll (must cover daily volume).
+    sync_poll_fetch_limit: int = 100
+    # Prioritize syncing and automating mail received within this many hours.
+    sync_recent_hours: int = 24
 
     # Automation actions
     automation_dry_run: bool = True

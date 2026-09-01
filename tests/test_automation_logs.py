@@ -9,6 +9,7 @@ from app.db.postgres_repository import PostgresEmailRepository
 from app.services.automation_run_logs import (
     _run_status,
     finalize_trace_summaries,
+    format_action_errors,
     persist_message_automation_logs,
 )
 from app.services.llm import get_llm_duration_ms, reset_llm_duration
@@ -69,6 +70,22 @@ async def test_list_automation_logs_filters_by_message_id():
     assert count_params == ("user@example.com", "msg-42")
     assert "r.zimbra_id = $2" in select_sql
     assert select_params == ("user@example.com", "msg-42", 50, 0)
+
+
+@pytest.mark.asyncio
+async def test_list_automation_logs_message_id_matches_signed_variants():
+    repo = PostgresEmailRepository("postgresql://test")
+    conn = _RecordingConn(rows=[_sample_log_row("-203684")])
+
+    await repo.list_automation_logs(
+        conn,
+        "user@example.com",
+        message_id="203684",
+    )
+
+    count_sql, count_params = conn.queries[0]
+    assert "zimbra_id = ANY($2::text[])" in count_sql
+    assert count_params == ("user@example.com", ["203684", "-203684"])
 
 
 @pytest.mark.asyncio
@@ -140,6 +157,25 @@ def test_run_status_completed():
     status, error = _run_status("msg-1", {}, [])
     assert status == "completed"
     assert error is None
+
+
+def test_format_action_errors_handles_dict_entries():
+    errors = [
+        {
+            "message_id": "203684",
+            "action": "classify",
+            "error": "LLM timeout",
+        }
+    ]
+    assert format_action_errors(errors, message_id="203684") == "203684: LLM timeout"
+
+
+def test_format_action_errors_filters_other_messages():
+    errors = [
+        {"message_id": "1", "error": "bad"},
+        {"message_id": "203684", "error": "LLM timeout"},
+    ]
+    assert format_action_errors(errors, message_id="203684") == "203684: LLM timeout"
 
 
 def test_result_from_db_without_action_row():

@@ -69,7 +69,10 @@ async def run(args: argparse.Namespace) -> dict:
     elif args.live:
         settings.automation_dry_run = False
 
-    await init_pool(require_postgres_database_url(settings.database_url))
+    await init_pool(
+        require_postgres_database_url(settings.database_url),
+        settings=settings,
+    )
     try:
         pipeline = ScheduledPipeline(settings)
         if args.full_mailbox:

@@ -7,6 +7,29 @@ from app.db.email_repository import EmailRepository
 
 GLOBAL_ACCOUNT = ""
 
+# Keep classify prompts small enough for local LLM context windows.
+MAX_CATEGORY_HINT_CHARS = 800
+MAX_CLASSIFICATION_INSTRUCTIONS_CHARS = 2000
+
+
+def _compact_prompt_text(text: str, max_chars: int) -> str:
+    """Collapse repeated lines and cap length for LLM prompts."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+    deduped: list[str] = []
+    prev: str | None = None
+    for line in cleaned.splitlines():
+        norm = line.strip()
+        if not norm or norm == prev:
+            continue
+        deduped.append(norm)
+        prev = norm
+    compact = "\n".join(deduped)
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max_chars - 3].rstrip() + "..."
+
 
 @dataclass
 class CategoryRule:
@@ -91,13 +114,22 @@ class ClassificationRules:
         ]
         instructions = (self.config.classification_instructions or "").strip()
         if instructions:
-            lines.extend([instructions, ""])
+            lines.extend(
+                [
+                    _compact_prompt_text(
+                        instructions, MAX_CLASSIFICATION_INSTRUCTIONS_CHARS
+                    ),
+                    "",
+                ]
+            )
 
         lines.append("Categories:")
         for category in self.enabled_categories():
+            hints = _compact_prompt_text(
+                category.classification_hints, MAX_CATEGORY_HINT_CHARS
+            )
             lines.append(
-                f"- **{category.slug}** ({category.display_name}): "
-                f"{category.classification_hints}"
+                f"- **{category.slug}** ({category.display_name}): {hints}"
             )
 
         return "\n".join(lines)

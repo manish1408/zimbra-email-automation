@@ -45,7 +45,10 @@ OPENAPI_TAGS = [
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    await init_pool(require_postgres_database_url(settings.database_url))
+    await init_pool(
+        require_postgres_database_url(settings.database_url),
+        settings=settings,
+    )
     application.state.email_service = EmailSyncService(settings)
     try:
         yield

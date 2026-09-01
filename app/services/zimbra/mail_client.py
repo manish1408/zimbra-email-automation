@@ -41,6 +41,31 @@ def normalize_search_query(query: str) -> str:
     return " ".join(q.split())
 
 
+_ZIMBRA_MSG_ID_RE = re.compile(r"^-?\d+$")
+
+
+def parse_zimbra_message_id(query: str) -> str | None:
+    """Return the query if it looks like a Zimbra numeric message id."""
+    candidate = query.strip()
+    if _ZIMBRA_MSG_ID_RE.fullmatch(candidate):
+        return candidate
+    return None
+
+
+def zimbra_message_id_variants(message_id: str) -> list[str]:
+    """Return equivalent Zimbra id forms (with and without a leading minus)."""
+    stripped = message_id.strip()
+    if not stripped:
+        return []
+    if not _ZIMBRA_MSG_ID_RE.fullmatch(stripped):
+        return [stripped]
+    variants = [stripped]
+    alternate = stripped[1:] if stripped.startswith("-") else f"-{stripped}"
+    if alternate not in variants:
+        variants.append(alternate)
+    return variants
+
+
 @dataclass
 class ZimbraMessage:
     id: str

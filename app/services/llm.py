@@ -15,6 +15,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
 from app.config import Settings
+from app.services.distributed_semaphore import llm_concurrency_limit
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -61,6 +62,15 @@ def _strip_thinking(text: str) -> str:
 
 def _extract_json_object(text: str) -> dict[str, Any]:
     cleaned = _strip_thinking(text.strip())
+    if not cleaned:
+        # Some reasoning models put the JSON only inside thinking blocks.
+        think_match = re.search(
+            r"<\s*think\s*>([\s\S]*?)<\s*/\s*think\s*>",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if think_match:
+            cleaned = think_match.group(1).strip()
     if "```" in cleaned:
         match = re.search(r"```(?:json)?\s*([\s\S]*?)```", cleaned, flags=re.IGNORECASE)
         if match:
@@ -76,31 +86,54 @@ async def ainvoke_structured(
     llm: BaseChatModel,
     schema: type[T],
     messages: list[BaseMessage],
+    *,
+    settings: Settings | None = None,
 ) -> T:
     """Structured output for OpenAI native models and JSON-prompt fallback for Vast AI."""
-    started = time.perf_counter()
-    try:
-        if isinstance(llm, ChatOpenAI):
-            structured = llm.with_structured_output(schema)
-            return await structured.ainvoke(messages)
+    from app.config import settings as app_settings
 
-        schema_hint = json.dumps(schema.model_json_schema(), indent=2)
-        augmented = [
-            *messages,
-            HumanMessage(
-                content=(
-                    "Return ONLY valid JSON matching this schema. "
-                    "No markdown fences, no commentary, no extra keys.\n"
-                    f"{schema_hint}"
-                )
-            ),
-        ]
-        result = await llm.ainvoke(augmented)
-        content = result.content if isinstance(result, AIMessage) else str(getattr(result, "content", result))
-        data = _extract_json_object(str(content))
-        return schema.model_validate(data)
-    finally:
-        _add_llm_duration(int((time.perf_counter() - started) * 1000))
+    runtime_settings = settings or app_settings
+    started = time.perf_counter()
+    async with llm_concurrency_limit(runtime_settings):
+        try:
+            if isinstance(llm, ChatOpenAI):
+                structured = llm.with_structured_output(schema)
+                return await structured.ainvoke(messages)
+
+            schema_hint = json.dumps(schema.model_json_schema(), indent=2)
+            augmented = [
+                *messages,
+                HumanMessage(
+                    content=(
+                        "Return ONLY valid JSON matching this schema. "
+                        "No markdown fences, no commentary, no extra keys.\n"
+                        f"{schema_hint}"
+                    )
+                ),
+            ]
+            last_exc: Exception | None = None
+            for attempt in range(_MAX_LLM_ATTEMPTS):
+                try:
+                    result = await llm.ainvoke(augmented)
+                    content = (
+                        result.content
+                        if isinstance(result, AIMessage)
+                        else str(getattr(result, "content", result))
+                    )
+                    if not str(content).strip() and attempt < _MAX_LLM_ATTEMPTS - 1:
+                        await asyncio.sleep(2**attempt)
+                        continue
+                    data = _extract_json_object(str(content))
+                    return schema.model_validate(data)
+                except (ValueError, json.JSONDecodeError) as exc:
+                    last_exc = exc
+                    if attempt < _MAX_LLM_ATTEMPTS - 1:
+                        await asyncio.sleep(2**attempt)
+                        continue
+                    raise
+            raise last_exc or RuntimeError("LLM structured output failed")
+        finally:
+            _add_llm_duration(int((time.perf_counter() - started) * 1000))
 
 
 class VastAIChatModel(BaseChatModel):

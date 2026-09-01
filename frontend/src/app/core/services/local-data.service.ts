@@ -21,12 +21,15 @@ export class LocalDataService {
     limit = 50,
     offset = 0,
     analyzed?: boolean,
+    messageId?: string,
   ): Observable<LocalMessageListResponse> {
-    return this.api.get<LocalMessageListResponse>(`${this.userPath(email)}/messages`, {
+    const params: Record<string, string | number | boolean> = {
       limit,
       offset,
-      analyzed,
-    });
+    };
+    if (analyzed != null) params['analyzed'] = analyzed;
+    if (messageId) params['message_id'] = messageId;
+    return this.api.get<LocalMessageListResponse>(`${this.userPath(email)}/messages`, params);
   }
 
   getMessage(email: string, messageId: string): Observable<MessageDetail> {

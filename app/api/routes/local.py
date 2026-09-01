@@ -25,12 +25,20 @@ async def list_local_messages(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     analyzed: bool | None = Query(default=None, description="Filter by analyzed status"),
+    message_id: str | None = Query(
+        default=None, description="Filter by Zimbra message ID (exact match)"
+    ),
     repository: EmailRepository = Depends(get_email_repository),
     conn: DbConnection = Depends(get_db_connection),
 ):
     try:
         messages, total = await repository.get_messages(
-            conn, user_email, limit=limit, offset=offset, analyzed=analyzed
+            conn,
+            user_email,
+            limit=limit,
+            offset=offset,
+            analyzed=analyzed,
+            message_id=message_id,
         )
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc

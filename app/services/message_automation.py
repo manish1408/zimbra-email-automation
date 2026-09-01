@@ -13,7 +13,7 @@ from app.models.schemas import (
 )
 from app.services.email_sync import EmailSyncService
 from app.services.llm import llm_configured, llm_not_configured_message
-from app.services.scheduled_pipeline import ScheduledPipeline
+from app.services.automation_run_logs import format_action_errors
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +222,11 @@ class MessageAutomationService:
 
             if action_errors or (action and action.get("error")):
                 status = "failed"
-                error = "; ".join(action_errors) if action_errors else action.get("error")
+                error = (
+                    format_action_errors(action_errors, message_id=message_id)
+                    if action_errors
+                    else action.get("error")
+                )
             elif not action and not force:
                 status = "skipped"
                 error = "Message already processed; use force=true to re-run"

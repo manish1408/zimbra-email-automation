@@ -36,13 +36,49 @@ def _classification_for(
     return None
 
 
+def _format_action_error(err: Any, *, message_id: str | None = None) -> str | None:
+    if isinstance(err, dict):
+        err_msg = str(err.get("error") or err)
+        err_id = str(err.get("message_id") or "")
+        if message_id and err_id and err_id != message_id:
+            return None
+        if message_id and err_id == message_id:
+            return (
+                err_msg
+                if err_msg.startswith(f"{message_id}:")
+                else f"{message_id}: {err_msg}"
+            )
+        return f"{err_id}: {err_msg}" if err_id else err_msg
+    text = str(err)
+    if message_id and not text.startswith(f"{message_id}:"):
+        return None
+    return text
+
+
+def format_action_errors(
+    action_errors: list[Any],
+    *,
+    message_id: str | None = None,
+) -> str:
+    parts: list[str] = []
+    for err in action_errors:
+        formatted = _format_action_error(err, message_id=message_id)
+        if formatted:
+            parts.append(formatted)
+    return "; ".join(parts)
+
+
 def _run_status(
     msg_id: str,
     record: dict[str, Any],
-    action_errors: list[str],
+    action_errors: list[Any],
 ) -> tuple[str, str | None]:
     record_error = record.get("error")
-    msg_errors = [e for e in action_errors if e.startswith(f"{msg_id}:")]
+    msg_errors: list[str] = []
+    for err in action_errors:
+        formatted = _format_action_error(err, message_id=msg_id)
+        if formatted:
+            msg_errors.append(formatted)
     if record_error or msg_errors:
         error = record_error or "; ".join(msg_errors)
         return "failed", error

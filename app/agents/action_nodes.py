@@ -114,9 +114,14 @@ def make_base_action_nodes(ctx: ActionNodeContext) -> dict[str, Any]:
             }
 
         if state.get("use_local_db") and ctx.email_repository and conn is not None:
+            since = state.get("unanalyzed_since")
             stored = await ctx.email_repository.get_unanalyzed_messages(
-                conn, user_email, limit=limit
+                conn, user_email, limit=limit, since=since
             )
+            if not stored and since:
+                stored = await ctx.email_repository.get_unanalyzed_messages(
+                    conn, user_email, limit=limit
+                )
             messages = [EmailRepository.to_summary_dict(m) for m in stored]
         else:
             inbox = await ctx.email_service.get_inbox(user_email=user_email, limit=limit)

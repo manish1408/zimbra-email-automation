@@ -8,6 +8,7 @@ import asyncpg
 
 from app.db.pool import get_pool
 from app.models.schemas import MessageDetail, MessageSummary
+from app.services.zimbra.mail_client import zimbra_message_id_variants
 from app.services.zimbra.soap import normalize_zimbra_date
 
 
@@ -146,17 +147,28 @@ class PostgresEmailRepository:
         return self._row_to_detail(row) if row else None
 
     async def get_unanalyzed_messages(
-        self, conn: asyncpg.Connection, account: str, limit: int = 50
+        self,
+        conn: asyncpg.Connection,
+        account: str,
+        limit: int = 50,
+        *,
+        since: str | None = None,
     ) -> list[MessageDetail]:
+        where = "account = $1 AND analyzed_at IS NULL"
+        params: list[Any] = [account]
+        if since:
+            params.append(since)
+            where += f" AND date >= ${len(params)}"
+        limit_idx = len(params) + 1
+        params.append(limit)
         rows = await conn.fetch(
-            """
+            f"""
             SELECT * FROM messages
-            WHERE account = $1 AND analyzed_at IS NULL
+            WHERE {where}
             ORDER BY date DESC NULLS LAST
-            LIMIT $2
+            LIMIT ${limit_idx}
             """,
-            account,
-            limit,
+            *params,
         )
         return [self._row_to_detail(row) for row in rows]
 
@@ -168,6 +180,7 @@ class PostgresEmailRepository:
         offset: int = 0,
         *,
         analyzed: bool | None = None,
+        message_id: str | None = None,
     ) -> tuple[list[MessageDetail], int]:
         where = "account = $1"
         params: list[Any] = [account]
@@ -175,6 +188,14 @@ class PostgresEmailRepository:
             where += " AND analyzed_at IS NOT NULL"
         elif analyzed is False:
             where += " AND analyzed_at IS NULL"
+        if message_id and message_id.strip():
+            variants = zimbra_message_id_variants(message_id.strip())
+            if len(variants) == 1:
+                params.append(variants[0])
+                where += f" AND zimbra_id = ${len(params)}"
+            else:
+                params.append(variants)
+                where += f" AND zimbra_id = ANY(${len(params)}::text[])"
 
         total = await conn.fetchval(f"SELECT COUNT(*) FROM messages WHERE {where}", *params)
         limit_param = len(params) + 1
@@ -446,8 +467,13 @@ class PostgresEmailRepository:
             params.append(status)
             filters.append(f"status = ${len(params)}")
         if message_id and message_id.strip():
-            params.append(message_id.strip())
-            filters.append(f"zimbra_id = ${len(params)}")
+            variants = zimbra_message_id_variants(message_id.strip())
+            if len(variants) == 1:
+                params.append(variants[0])
+                filters.append(f"zimbra_id = ${len(params)}")
+            else:
+                params.append(variants)
+                filters.append(f"zimbra_id = ANY(${len(params)}::text[])")
 
         where = " AND ".join(filters) if filters else "TRUE"
         count_sql = f"SELECT COUNT(*) FROM message_automation_runs WHERE {where}"

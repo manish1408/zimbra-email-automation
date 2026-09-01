@@ -81,7 +81,10 @@ async def _run_main(
     process_all: bool,
     poll_all: bool,
 ) -> None:
-    await init_pool(require_postgres_database_url(settings.database_url))
+    await init_pool(
+        require_postgres_database_url(settings.database_url),
+        settings=settings,
+    )
     try:
         pipeline = ScheduledPipeline(settings)
         if args.once:
