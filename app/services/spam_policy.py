@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 # Always injected into the classify prompt (not only DB instructions).
 SALES_MARKETING_SPAM_POLICY = """
-## Sales / promotion / marketing → spam
+## Sales / promotion / marketing / newsletters → spam
 Analyze the sender, subject, and body together. Use judgment — do not rely on a single keyword.
 
 Mark is_spam=true and category=spam when you are confident the email is primarily:
@@ -19,19 +19,59 @@ Mark is_spam=true and category=spam when you are confident the email is primaril
 - cold outreach / "partnership" / "collaboration" pitches that are really sales
 - marketing newsletters, promo blasts, catalogs, demos, webinars, or "book a call" pitches
 - vendor/brand promotional content (sales, discounts, new features, ad products)
+- informational newsletters, digests, mailing-list blasts, or recurring content roundups
+  (travel/lifestyle/tech/industry news, links, tips, events) sent to a list — even when
+  they are not directly selling in that issue
 
-Set confidence to reflect how sure you are (typically ≥ 0.75 for clear sales/marketing).
-Do NOT use category=marketing for these — use spam so they go to Junk.
+Set confidence to reflect how sure you are (typically ≥ 0.75 for clear sales/marketing/newsletters).
+Do NOT use category=marketing or category=general for these — use spam so they go to Junk.
 Do NOT generate a reply draft for spam.
 
 Do NOT mark as spam when:
 - a customer or prospect is asking about GK Hair products, orders, invoices, or support
 - the message is transactional (shipping, invoices, password resets, account alerts for tools we use)
-- it is genuine personal/business correspondence that is not a sales pitch
+- it is genuine personal/business correspondence that is not a bulk newsletter or sales pitch
 """.strip()
 
 # Categories that mean "this is promotional / should be Junk" when confidence is high.
 SPAM_LIKE_CATEGORIES = frozenset({"spam", "marketing"})
+
+# Text signals for bulk/informational newsletters when the model labels them general.
+NEWSLETTER_SIGNALS = (
+    "newsletter",
+    "mailing list",
+    "mailing-list",
+    "unsubscribe",
+    "digest",
+    "monthly update",
+    "weekly update",
+    "content roundup",
+    "recurring content",
+)
+
+PROTECTED_CATEGORIES = frozenset({
+    "orders",
+    "customer_support",
+    "billing",
+    "enquiry",
+    "careers",
+    "logistics",
+    "person_request",
+})
+
+
+def looks_like_informational_newsletter(classification: Mapping[str, Any]) -> bool:
+    """Detect bulk/informational newsletters the model mislabeled as general."""
+    slug = str(classification.get("category") or "").strip().lower()
+    if slug in PROTECTED_CATEGORIES:
+        return False
+    text = " ".join(
+        [
+            str(classification.get("subject") or ""),
+            str(classification.get("reasoning") or ""),
+        ]
+    ).lower()
+    return any(signal in text for signal in NEWSLETTER_SIGNALS)
 
 
 def apply_spam_confidence_policy(
@@ -50,7 +90,11 @@ def apply_spam_confidence_policy(
     copy["confidence"] = confidence
 
     slug = str(copy.get("category") or "").strip().lower()
-    model_flags_spam = bool(copy.get("is_spam")) or slug in SPAM_LIKE_CATEGORIES
+    model_flags_spam = (
+        bool(copy.get("is_spam"))
+        or slug in SPAM_LIKE_CATEGORIES
+        or looks_like_informational_newsletter(copy)
+    )
 
     if model_flags_spam and confidence >= threshold:
         copy["is_spam"] = True
@@ -59,7 +103,12 @@ def apply_spam_confidence_policy(
         copy["needs_forwarding"] = False
         copy["needs_live_agent"] = False
         reasoning = str(copy.get("reasoning") or "").strip()
-        marker = "sales/marketing spam policy"
+        if slug in SPAM_LIKE_CATEGORIES or bool(classification.get("is_spam")):
+            marker = "sales/marketing spam policy"
+        elif looks_like_informational_newsletter(classification):
+            marker = "informational newsletter policy"
+        else:
+            marker = "sales/marketing spam policy"
         if marker not in reasoning.lower():
             note = (
                 f"Marked spam by {marker} "

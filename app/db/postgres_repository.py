@@ -569,11 +569,19 @@ class PostgresEmailRepository:
         )
         return int(val or 0)
 
-    async def count_unanalyzed(self, conn: asyncpg.Connection, account: str) -> int:
-        val = await conn.fetchval(
-            "SELECT COUNT(*) FROM messages WHERE account = $1 AND analyzed_at IS NULL",
-            account,
-        )
+    async def count_unanalyzed(
+        self,
+        conn: asyncpg.Connection,
+        account: str,
+        *,
+        since: str | None = None,
+    ) -> int:
+        where = "account = $1 AND analyzed_at IS NULL"
+        params: list[Any] = [account]
+        if since:
+            params.append(since)
+            where += f" AND date >= ${len(params)}"
+        val = await conn.fetchval(f"SELECT COUNT(*) FROM messages WHERE {where}", *params)
         return int(val or 0)
 
     async def get_analyzed_at(

@@ -247,6 +247,8 @@ class ScheduledPipeline:
         *,
         query: str = "is:anywhere",
         process_all: bool = True,
+        unanalyzed_since: str | None = None,
+        unanalyzed_since_only: bool = False,
     ) -> dict[str, Any]:
         """Sync entire mailbox to DB, then run automation on all unanalyzed messages."""
         conn = await self.repository.connect()
@@ -258,7 +260,9 @@ class ScheduledPipeline:
                 persist=True,
             )
             total = await self.repository.count_messages(conn, account)
-            unanalyzed = await self.repository.count_unanalyzed(conn, account)
+            unanalyzed = await self.repository.count_unanalyzed(
+                conn, account, since=unanalyzed_since if unanalyzed_since_only else None
+            )
             result: dict[str, Any] = {
                 "account": account,
                 "sync": {
@@ -279,7 +283,12 @@ class ScheduledPipeline:
 
             batches: list[dict[str, Any]] = []
             while True:
-                stats = await self._run_action_pipeline(conn, account)
+                stats = await self._run_action_pipeline(
+                    conn,
+                    account,
+                    since=unanalyzed_since,
+                    since_only=unanalyzed_since_only,
+                )
                 batches.append(stats)
                 if not process_all:
                     result["analysis"] = stats
@@ -288,8 +297,10 @@ class ScheduledPipeline:
                     break
 
             if process_all:
-                remaining = await self.repository.count_unanalyzed(conn, account)
-                processed = await self.repository.count_messages(conn, account) - remaining
+                remaining = await self.repository.count_unanalyzed(
+                    conn, account, since=unanalyzed_since if unanalyzed_since_only else None
+                )
+                processed = unanalyzed - remaining
                 result["analysis"] = {
                     "batches": len(batches),
                     "batch_results": batches,
@@ -385,9 +396,12 @@ class ScheduledPipeline:
         self,
         conn: asyncpg.Connection,
         account: str,
+        *,
+        since: str | None = None,
+        since_only: bool = False,
     ) -> dict[str, Any]:
         limit = self.settings.agent_inbox_limit
-        recent_since = (
+        recent_since = since or (
             datetime.now(UTC) - timedelta(hours=self.settings.sync_recent_hours)
         ).isoformat()
         unanalyzed = await self.repository.get_unanalyzed_messages(
@@ -396,7 +410,7 @@ class ScheduledPipeline:
             limit=limit,
             since=recent_since,
         )
-        if not unanalyzed:
+        if not unanalyzed and not since_only:
             unanalyzed = await self.repository.get_unanalyzed_messages(
                 conn, account, limit=limit
             )

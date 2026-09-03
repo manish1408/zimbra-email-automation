@@ -10,6 +10,7 @@ def test_policy_text_covers_sales_and_marketing():
     text = SALES_MARKETING_SPAM_POLICY.lower()
     assert "sell" in text
     assert "marketing" in text
+    assert "newsletter" in text
     assert "is_spam=true" in text
     assert "category=spam" in text
 
@@ -80,6 +81,23 @@ def test_non_spam_categories_unaffected():
     assert result["is_spam"] is False
     assert result["category"] == "orders"
     assert result["needs_response_generation"] is True
+
+
+def test_informational_newsletter_labeled_general_becomes_spam():
+    result = apply_spam_confidence_policy(
+        {
+            "message_id": "204051",
+            "subject": "Liberation Travel Hacks 09/2026 (EN)",
+            "category": "general",
+            "is_spam": False,
+            "confidence": 0.95,
+            "reasoning": "The content is a monthly newsletter from Liberation Travel.",
+        },
+        threshold=0.75,
+    )
+    assert result["is_spam"] is True
+    assert result["category"] == "spam"
+    assert "informational newsletter policy" in result["reasoning"].lower()
 
 
 def test_prompt_includes_sales_marketing_policy():

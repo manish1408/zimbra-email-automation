@@ -59,6 +59,7 @@ sync_backend() {
     --exclude '.venv' --exclude 'venv' --exclude 'node_modules' --exclude '.git' \
     --exclude 'data' --exclude 'logs' --exclude '__pycache__' --exclude '*.pyc' \
     --exclude 'frontend/dist' --exclude '.DS_Store' --exclude 'deploy.env' \
+    --exclude 'config/pollers' \
     "$PROJECT_ROOT/" "${DEPLOY_USER}@${DEPLOY_HOST}:${APP_DIR}/"
   scp_cmd "$PROJECT_ROOT/.env" "${DEPLOY_USER}@${DEPLOY_HOST}:${APP_DIR}/.env"
 }

@@ -166,8 +166,13 @@ class ClassificationService:
         by_id = {str(m.get("id")): m for m in messages}
         classifications: list[MessageClassification] = []
 
-        for item in result.analyses:
+        for index, item in enumerate(result.analyses):
             msg_id = item.message_id
+            if msg_id not in by_id:
+                if len(messages) == 1:
+                    msg_id = str(messages[0].get("id", ""))
+                elif index < len(messages):
+                    msg_id = str(messages[index].get("id", ""))
             row = MessageClassification(
                 message_id=msg_id,
                 subject=item.subject or by_id.get(msg_id, {}).get("subject"),
